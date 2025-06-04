@@ -1,9 +1,9 @@
-/*
- @license
- video_view
- Copyright Xiao Shen
- SPDX-License-Identifier: BSD-2-Clause
-*/
+/*!
+ * @license
+ * https://github.com/xxoo/flutter_video_view/blob/main/web/VideoViewPlugin.js
+ * Copyright 2025 Xiao Shen.
+ * Licensed under BSD2.
+ */
 globalThis.VideoViewPlugin = class VideoViewPlugin {
 	/** @type {boolean} */
 	static #isApple = navigator.vendor.startsWith('Apple');

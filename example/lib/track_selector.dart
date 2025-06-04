@@ -15,7 +15,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
   final _player = VideoController(
     source:
         'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8',
-    position: 300000,
+    //position: 300000,
     //autoPlay: true,
   );
   final _inputController = TextEditingController();

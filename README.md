@@ -7,6 +7,21 @@ For API documentation, please visit [here](https://pub.dev/documentation/video_v
 
 `video_view` requires Flutter 3.32 or higher. For older versions, please use [av_media_player](https://pub.dev/packages/av_media_player) instead.
 
+## Demo
+You may run the [demo](https://xxoo.github.io/flutter_video_view/) online, or you can run the demo app locally by cloning this repository:
+```shell
+git clone -c core.symlinks=true https://github.com/xxoo/flutter_video_view.git
+cd flutter_video_view/example
+```
+For basic usage, please run:
+```shell
+flutter run
+```
+For advanced usage, please run:
+```shell
+flutter run lib/main_advanced.dart
+```
+
 ## Installation
 
 1. Run the following command in your project directory:
@@ -56,7 +71,7 @@ dart run video_view:webinit
 
 [^subtitle]: Only internal subtitle tracks are supported.
 [^libmpv]: `video_view` requires `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `libmpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
-[^shaka]: `video_view` requires [ShakaPlayer](https://shaka-player-demo.appspot.com/dist/shaka-player.compiled.js) v4.15 or higher to enable HLS, DASH, MSS support on web platforms.
+[^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) v4.15 or higher to enable HLS, DASH, MSS support on web platforms.
 [^h265]: Windows user may need to install a free [H.265 decoder](https://apps.microsoft.com/detail/9n4wgh0z6vhq) from Microsoft Store. Web platforms may lack H.265 support except for Apple webkit.
 [^apple]: Apple platforms may lack WebM and AV1 support.
 [^vtt]: WebVTT subtitles within HLS are not supported by Linux backend.

@@ -15,7 +15,7 @@ void main(List<String> args) async {
     if (!content.contains('VideoViewPlugin.js')) {
       final newContent = content.replaceFirst(
         RegExp(r'(?=</head>)', caseSensitive: false),
-        '  <script src="https://shaka-player-demo.appspot.com/dist/shaka-player.compiled.js"></script>\n  <script src="VideoViewPlugin.js"></script>\n',
+        '  <script src="https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js"></script>\n  <script src="VideoViewPlugin.js"></script>\n',
       );
       await html.writeAsString(newContent);
       print('referenced VideoViewPlugin.js in "${html.path}"');
