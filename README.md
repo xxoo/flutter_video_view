@@ -1,7 +1,7 @@
 ## About
 
 `video_view` is a lightweight media player with subtitle rendering[^subtitle] and audio track switching support, leveraging system or app-level components for seamless playback.
-For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/index/index-library.html).
+For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
 
 ## Flutter support
 
@@ -30,8 +30,8 @@ dart run video_view:webinit
 | Android      | 6+          | [ExoPlayer](https://developer.android.com/media/media3/exoplayer)                     |
 | iOS          | 15+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/)          |
 | macOS        | 12+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/)          |
-| Windows      | 10+         | [MediaPlayer](https://learn.microsoft.com/uwp/api/windows.media.playback.video_view) |
-| Linux        | N/A         | [libmpv](https://github.com/mpv-player/mpv/tree/master/libmpv)[^libmpv]               |
+| Windows      | 10+         | [MediaPlayer](https://learn.microsoft.com/uwp/api/windows.media.playback.mediaplayer) |
+| Linux        | N/A         | [libmpv](https://github.com/mpv-player/mpv/tree/master/include/mpv)[^libmpv]          |
 | Web | Chrome 84+ / Safari 15+ / Firefox 90+ | [\<video>](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/video), [ShakaPlayer](https://shaka-player-demo.appspot.com/docs/api/shaka.Player.html)[^shaka] |
 
 ## Supported media formats
