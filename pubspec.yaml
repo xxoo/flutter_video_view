@@ -1,0 +1,43 @@
+name: video_view
+description: "A lightweight media player with subtitle rendering and audio track switching support, leveraging system or app-level components for seamless playback."
+version: 1.0.0
+repository: "https://github.com/xxoo/video_view"
+issue_tracker: "https://github.com/xxoo/video_view/issues"
+topics:
+  - player
+  - video
+  - media
+  - subtitle
+  - hls
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+  flutter: ">=3.32.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  set_state_async: any
+
+dev_dependencies:
+  flutter_lints: any
+
+flutter:
+  plugin:
+    platforms:
+      web:
+        fileName: src/plugin.web.dart
+        pluginClass: VideoViewPlugin
+      android:
+        package: dev.xx.video_view
+        pluginClass: VideoViewPlugin
+      ios:
+        pluginClass: VideoViewPlugin
+      macos:
+        pluginClass: VideoViewPlugin
+      linux:
+        pluginClass: VideoViewPlugin
+      windows:
+        pluginClass: VideoViewPluginCApi

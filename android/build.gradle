@@ -1,0 +1,57 @@
+group 'dev.xx.video_view'
+version '1.0.0'
+
+buildscript {
+	repositories {
+		google()
+		mavenCentral()
+	}
+
+	dependencies {
+		classpath 'com.android.tools.build:gradle:8.10.1'
+		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21"
+	}
+}
+
+allprojects {
+	repositories {
+		google()
+		mavenCentral()
+	}
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+	if (project.android.hasProperty("namespace")) {
+		namespace 'dev.xx.video_view'
+	}
+
+	compileOptions {
+		sourceCompatibility JavaVersion.VERSION_1_8
+		targetCompatibility JavaVersion.VERSION_1_8
+	}
+
+	kotlinOptions {
+		jvmTarget = '1.8'
+	}
+
+	sourceSets {
+		main.java.srcDirs += 'src/main/kotlin'
+	}
+
+	dependencies {
+		implementation "androidx.media3:media3-ui:1.7.1"
+		implementation "androidx.media3:media3-exoplayer:1.7.1"
+		implementation "androidx.media3:media3-exoplayer-hls:1.7.1"
+		implementation "androidx.media3:media3-exoplayer-dash:1.7.1"
+		implementation "androidx.media3:media3-exoplayer-smoothstreaming:1.7.1"
+	}
+
+	compileSdk 36
+
+	defaultConfig {
+		minSdk 23
+	}
+}

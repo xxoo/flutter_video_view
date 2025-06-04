@@ -1,0 +1,4 @@
+flutter/ephemeral
+flutter/generated_*
+cmake-build-debug
+build

@@ -1,0 +1,1 @@
+../../../../ios/video_view/Sources/video_view/VideoViewPlugin.swift
