@@ -45,7 +45,7 @@ jobs:
 
       #- run: build/bin/flutter pub publish -f
       
-      - run: ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release
+      - run: ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release -t lib/main_advanced.dart
         working-directory: ./example
 
       - name: Upload artifact
