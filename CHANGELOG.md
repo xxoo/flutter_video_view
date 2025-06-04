@@ -1,3 +1,6 @@
+## 1.0.1
+- fix a bug in Safari may cause loading error.
+
 ## 1.0.0
 - architecture upgrade, and add web support. (wasm compatible)
 - provides better performance on android, but requires flutter 3.32 or higher.

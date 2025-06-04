@@ -521,26 +521,26 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 						};
 					}
 				} else if (this.#dom.audioTracks) {
-					const audioTracks = this.#dom.audioTracks;
-					for (let i = 0; i < audioTracks.length; i++) {
-						audioTracks[VideoViewPlugin.#getTrackId(audioTracks, i)] = {
-							title: audioTracks[i].label,
-							language: audioTracks[i].language,
-							format: audioTracks[i].configuration?.codec,
-							bitRate: audioTracks[i].configuration?.bitrate,
-							channels: audioTracks[i].configuration?.numberOfChannels,
-							sampleRate: audioTracks[i].configuration?.sampleRate
+					const tracks = this.#dom.audioTracks;
+					for (let i = 0; i < tracks.length; i++) {
+						audioTracks[VideoViewPlugin.#getTrackId(tracks, i)] = {
+							title: tracks[i].label,
+							language: tracks[i].language,
+							format: tracks[i].configuration?.codec,
+							bitRate: tracks[i].configuration?.bitrate,
+							channels: tracks[i].configuration?.numberOfChannels,
+							sampleRate: tracks[i].configuration?.sampleRate
 						};
 					}
 				}
 				const subtitleTracks = {},
-					textTracks = this.#dom.textTracks;
-				for (let i = 0; i < textTracks.length; i++) {
-					if (VideoViewPlugin.#isSubtitle(textTracks[i])) {
-						subtitleTracks[VideoViewPlugin.#getTrackId(textTracks, i)] = {
-							title: textTracks[i].label,
-							language: textTracks[i].language,
-							format: textTracks[i].kind
+					tracks = this.#dom.textTracks;
+				for (let i = 0; i < tracks.length; i++) {
+					if (VideoViewPlugin.#isSubtitle(tracks[i])) {
+						subtitleTracks[VideoViewPlugin.#getTrackId(tracks, i)] = {
+							title: tracks[i].label,
+							language: tracks[i].language,
+							format: tracks[i].kind
 						};
 					}
 				}
