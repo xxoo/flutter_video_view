@@ -45,7 +45,8 @@ jobs:
 
       #- run: build/bin/flutter pub publish -f
       
-      - run: cd example | ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release
+      - run: ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release
+        working-directory: ./example
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
