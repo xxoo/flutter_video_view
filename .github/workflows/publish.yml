@@ -1,5 +1,5 @@
 # .github/workflows/publish.yml
-name: Publish to pub.dev
+name: Publish
 
 on:
   push:
@@ -7,10 +7,20 @@ on:
     - 'v[0-9]+.[0-9]+.[0-9]+*' # tag-pattern on pub.dev: 'v{{version}}'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    permissions:
-      id-token: write # Required for authentication using OIDC
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,4 +43,16 @@ jobs:
           CREDENTIAL_JSON: ${{ secrets.CREDENTIAL_JSON }}
         run: echo "$CREDENTIAL_JSON" > ~/.config/dart/pub-credentials.json
 
-      - run: build/bin/flutter pub publish -f
+      #- run: build/bin/flutter pub publish -f
+      
+      - run: cd example
+
+      - run: ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'build/web'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
