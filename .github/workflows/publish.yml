@@ -45,14 +45,12 @@ jobs:
 
       #- run: build/bin/flutter pub publish -f
       
-      - run: cd example
-
-      - run: ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release
+      - run: cd example | ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'build/web'
+          path: 'example/build/web'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
