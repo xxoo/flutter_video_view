@@ -1,3 +1,6 @@
+## 1.0.2
+- improve example.
+
 ## 1.0.1
 - fix a bug in Safari may cause loading error.
 
