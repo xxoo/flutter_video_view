@@ -1,3 +1,6 @@
+## 1.0.4
+- improve example.
+
 ## 1.0.3
 - improve example.
 
