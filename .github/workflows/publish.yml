@@ -32,15 +32,11 @@ jobs:
       - run: sudo apt install -y curl git unzip xz-utils zip libglu1-mesa
 
       - run: build/bin/flutter pub get
-
-      - run: mkdir -p ~/.config/dart
       
       - shell: bash
         env:
           CREDENTIAL_JSON: ${{ secrets.CREDENTIAL_JSON }}
         run: echo "$CREDENTIAL_JSON" > ~/.config/dart/pub-credentials.json
-
-      - run: build/bin/flutter pub publish -f
       
       - run: ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release -t lib/main_advanced.dart
         working-directory: ./example
@@ -52,3 +48,7 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - run: mkdir -p ~/.config/dart
+
+      - run: build/bin/flutter pub publish -f
