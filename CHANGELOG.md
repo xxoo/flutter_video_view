@@ -1,3 +1,6 @@
+## 1.0.6
+- fix a bug may cause subtitles not working on Android Chrome.
+
 ## 1.0.5
 - improve example.
 

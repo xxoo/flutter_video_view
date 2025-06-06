@@ -682,7 +682,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		let cType = '';
 		const m = url.match(/\.(?:(mpd)|(ism\/Manifest)|(m3u8))/i);
 		if (m) {
-			const mimes = ['application/dash+xml', 'application/vnd.ms-sstr+xml', 'application/x-mpegURL'];
+			const mimes = ['application/dash+xml', 'application/vnd.ms-sstr+xml', 'application/x-mpegurl'];
 			for (let i = 0; i < mimes.length; i++) {
 				if (m[i + 1]) {
 					cType = mimes[i];
