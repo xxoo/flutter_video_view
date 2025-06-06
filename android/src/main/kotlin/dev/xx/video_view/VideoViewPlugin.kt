@@ -65,17 +65,19 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		val url: String
 		if (source.startsWith("asset://")) {
 			url = "asset:///${binding.flutterAssets.getAssetFilePathBySubpath(source.substring(8))}"
-		} else if (source.startsWith("file://") || !source.contains("://")) {
-			url = if (source.startsWith("file://")) source else "file://$source"
+		} else if (!source.contains("://")) {
+			url = "file://$source"
 		} else {
 			url = source
-			networking = true
+			networking = !source.startsWith("file://")
 		}
+		val match = Regex("\\.(?:mpd|ism/manifest|m3u8)", RegexOption.IGNORE_CASE).findAll(url)
+		val ext = if (match.any()) match.last().value.lowercase() else ""
 		try {
 			exoPlayer.setMediaItem(
-				if (url.contains(".m3u8", ignoreCase = true)) MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
-				else if (url.contains(".mpd", ignoreCase = true)) MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_MPD).build()
-				else if (url.contains(".ism/Manifest", ignoreCase = true)) MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_SS).build()
+				if (ext == ".m3u8") MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+				else if (ext == ".mpd") MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_MPD).build()
+				else if (ext == ".ism/manifest") MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_SS).build()
 				else MediaItem.fromUri(url)
 			)
 			exoPlayer.prepare()

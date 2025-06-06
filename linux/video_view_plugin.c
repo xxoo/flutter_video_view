@@ -539,7 +539,7 @@ static gboolean video_controller_event_callback(void* id) {
 							}
 						}
 					} else if (g_str_equal(detail->name, "demuxer-cache-time")) {
-						if (self->networking) {
+						if (self->state > 1 && self->networking && !self->streaming) {
 							self->bufferPosition = (int64_t)(*(double*)detail->data * 1000);
 							g_autoptr(FlValue) evt = fl_value_new_map();
 							fl_value_set_string_take(evt, "event", fl_value_new_string("buffer"));

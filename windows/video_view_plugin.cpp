@@ -213,6 +213,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	int16_t overrideSubtitleTrack = -1;
 	bool looping = false;
 	bool showSubtitle = false;
+	bool networking = false;
 	uint8_t state = 0; //0: idle, 1: opening, 2: ready, 3: playing
 
 	int16_t getDefaultAudioTrack(const string& lang) {
@@ -539,7 +540,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						});
 					}
 				}
-				}));
+			}));
 		});
 
 		playbackSession.PositionChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
@@ -548,7 +549,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				if (sharedThis && sharedThis->state > 1) {
 					sharedThis->setPosition();
 				}
-				}));
+			}));
 		});
 
 		playbackSession.SeekCompleted([weakThis](auto, auto) {
@@ -563,7 +564,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						});
 					}
 				}
-				}));
+			}));
 		});
 
 		playbackSession.BufferingStarted([weakThis](auto, auto) {
@@ -575,7 +576,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						{ string("value"), EncodableValue(true) }
 					});
 				}
-				}));
+			}));
 		});
 
 		playbackSession.BufferingEnded([weakThis](auto, auto) {
@@ -587,13 +588,13 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						{ string("value"), EncodableValue(false) }
 					});
 				}
-				}));
+			}));
 		});
 
 		playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
 			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 1 && !sharedThis->mediaPlayer.RealTimePlayback()) {
+				if (sharedThis && sharedThis->state > 1 && sharedThis->networking && !sharedThis->mediaPlayer.RealTimePlayback()) {
 					auto buffered = playbackSession.GetBufferedRanges();
 					for (uint32_t i = 0; i < buffered.Size(); i++) {
 						auto start = buffered.GetAt(i).Start.count();
@@ -615,7 +616,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						}
 					}
 				}
-				}));
+			}));
 		});
 
 		mediaPlayer.SubtitleFrameChanged([weakThis](auto, auto) {
@@ -649,7 +650,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						});
 					}
 				}
-				}));
+			}));
 		});
 
 		mediaPlayer.MediaOpened([weakThis](auto, auto) {
@@ -664,7 +665,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						if (sharedThis) {
 							sharedThis->loadEnd();
 						}
-						}));
+					}));
 				} else {
 					playbackSession.Position(chrono::milliseconds(sharedThis->position));
 					sharedThis->position = 0;
@@ -689,7 +690,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						});
 					}
 				}
-				}));
+			}));
 		});
 	}
 
@@ -704,13 +705,14 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			sourceUrl += wstring(src.begin() + 8, src.end());
 			replace(sourceUrl.begin(), sourceUrl.end(), L'\\', L'/');
 			url = sourceUrl;
-		} else if (src.find("://") != string::npos) {
-			url = to_hstring(src);
-		} else {
+		} else if (src.find("://") == string::npos) {
 			wstring sourceUrl(L"file://");
 			sourceUrl += wstring(src.begin(), src.end());
 			replace(sourceUrl.begin(), sourceUrl.end(), L'\\', L'/');
 			url = sourceUrl;
+		} else {
+			url = to_hstring(src);
+			networking = !src._Starts_with("file://");
 		}
 		close();
 		source = src;
@@ -734,6 +736,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		overrideAudioTrack = -1;
 		overrideSubtitleTrack = -1;
 		source = "";
+		networking = false;
 		auto src = mediaPlayer.Source();
 		if (src) {
 			mediaPlayer.Source(nullptr);

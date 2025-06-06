@@ -1,3 +1,7 @@
+## 1.0.7
+- improve format detection from url on Android.
+- avoid buffering message for local files.
+
 ## 1.0.6
 - fix a bug may cause subtitles not working on Android Chrome.
 

@@ -680,16 +680,15 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#state = 1;
 		this.#source = url;
 		let cType = '';
-		const m = url.match(/\.(?:(mpd)|(ism\/Manifest)|(m3u8))/i);
+		const m = url.match(/\.(?:mpd|ism\/manifest|m3u8)/ig);
 		if (m) {
-			const mimes = ['application/dash+xml', 'application/vnd.ms-sstr+xml', 'application/x-mpegurl'];
-			for (let i = 0; i < mimes.length; i++) {
-				if (m[i + 1]) {
-					cType = mimes[i];
-					break;
-				}
-			}
-			if (typeof shaka === 'object' && VideoViewPlugin.#hasMSE && (m[1] || m[2] || (m[3] && !VideoViewPlugin.#isApple))) {
+			const types = {
+				'.mpd': 'application/dash+xml',
+				'.ism/manifest': 'application/vnd.ms-sstr+xml',
+				'.m3u8': 'application/x-mpegurl'
+			};
+			cType = types[m[m.length - 1].toLowerCase()];
+			if (globalThis.shaka && VideoViewPlugin.#hasMSE && !VideoViewPlugin.#isApple || cType !== types['.m3u8']) {
 				this.#shaka = new shaka.Player();
 			}
 		}

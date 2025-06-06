@@ -74,6 +74,24 @@ dart run video_view:webinit
 | Subtitle Format   | WebVTT[^vtt], CEA-608/708                          |
 | Transfer Protocol | HTTP, HLS, LL-HLS, DASH[^avplayer], MSS[^avplayer] |
 
+---
+### How to specify format manually
+
+Most backends don't support manually specifying media format, with Android and Web being the exceptions. Therefore, there's no formal API planned for this feature. However, supported platforms can automatically detect the format from the URL. You can simply append a file extension to the query string or hash fragment to specify the format. Please note that only 3 extensions are recognized: `.m3u8`, `.mpd`, and `.ism/manifest`. If multiple extensions are found, the last one takes precedence. For example:
+```dart
+// No need to specify format, the url already contains `.m3u8`
+final example0 = 'https://example.com/video.m3u8';
+
+// Missing extension in path, add `.m3u8` in query string
+final example1 = 'https://example.com/video?x=.m3u8';
+
+// Override HLS to DASH format with query string
+final example2 = 'https://example.com/video.m3u8?y=.mpd';
+
+// Override HLS to DASH format with hash fragment
+final example3 = 'https://example.com/video.m3u8#.mpd';
+```
+
 [^subtitle]: Only internal subtitle tracks are supported.
 [^libmpv]: `video_view` requires `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `libmpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
 [^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) v4.15 or higher to enable HLS, DASH, MSS support on web platforms.

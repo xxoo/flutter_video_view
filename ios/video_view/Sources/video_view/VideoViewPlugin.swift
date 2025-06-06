@@ -41,6 +41,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 	private var maxHeight = 0.0
 	private var maxBitrate = 0.0
 	private var showSubtitle = false
+	private var networking = false
 
 	init(registrar: FlutterPluginRegistrar) {
 #if os(macOS)
@@ -122,6 +123,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 			uri = URL(fileURLWithPath: Bundle.main.bundlePath + "/" + FlutterDartProject.lookupKey(forAsset: String(source.suffix(source.count - 8))))
 		} else if source.contains("://") {
 			uri = URL(string: source)
+			networking = !source.starts(with: "file://")
 		} else {
 			uri = URL(fileURLWithPath: source)
 		}
@@ -158,6 +160,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 		source = nil
 		reading = nil
 		rendering = nil
+		networking = false
 		mediaGroups.removeAll()
 		if avPlayer.currentItem != nil {
 			NotificationCenter.default.removeObserver(
@@ -515,7 +518,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 			if let duration = avPlayer.currentItem?.duration.seconds,
 			let currentTime = avPlayer.currentItem?.currentTime(),
 			let timeRanges = avPlayer.currentItem?.loadedTimeRanges as? [CMTimeRange],
-			state > 1 && duration > 0 {
+			state > 1 && networking && duration > 0 {
 				for timeRange in timeRanges {
 					let end = timeRange.start + timeRange.duration
 					if timeRange.start <= currentTime && end >= currentTime {
