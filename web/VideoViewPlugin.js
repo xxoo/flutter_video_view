@@ -131,6 +131,9 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	/** @type {number} */
 	#position = 0;
 
+	/** @type {number} */
+	#bufferPosition = 0;
+
 	/** @type {function(object):void} */
 	#sendMessage;
 
@@ -156,7 +159,10 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	#getDefaultAudioTrack = lang => {
 		const tracks = this.#shaka ? this.#shaka.getAudioTracks() : this.#dom.audioTracks;
 		if (tracks && tracks.length) {
-			const langs = new Map(this.#shaka ? tracks.map((v, i) => [i, v.language ? v.language.split('-') : []]) : Array.prototype.map.call(tracks, (v, i) => [v.id ? +v.id : i, v.language.split('-')]));
+			const langs = new Map(this.#shaka
+				? tracks.map((v, i) => [i, v.language ? v.language.split('-') : []])
+				: Array.prototype.map.call(tracks, (v, i) => [v.id ? +v.id : i, v.language.split('-')])
+			);
 			let j = lang ? VideoViewPlugin.#getBestMatchByLanguage(lang.split('-'), langs) : -1;
 			if (j < 0) {
 				if (this.#shaka) {
@@ -181,7 +187,10 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 
 	/** @param {string} lang */
 	#getDefaultSubtitleTrack = lang => {
-		const langs = new Map(Array.prototype.map.call(this.#dom.textTracks, (v, i) => VideoViewPlugin.#isSubtitle(v) ? [v.id ? +v.id : i, v.language.split('-')] : null).filter(v => v));
+		const langs = new Map(Array.prototype.map.call(
+			this.#dom.textTracks,
+			(v, i) => VideoViewPlugin.#isSubtitle(v) ? [v.id ? +v.id : i, v.language.split('-')] : null
+		).filter(v => v));
 		if (langs.size) {
 			let j = lang ? VideoViewPlugin.#getBestMatchByLanguage(lang.split('-'), langs) : -1;
 			if (j < 0) {
@@ -203,6 +212,12 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		value: this.#dom.currentTime * 1000 | 0
 	});
 
+	#sendBuffer = () => this.#sendMessage({
+		event: 'buffer',
+		start: this.#dom.currentTime * 1000 | 0,
+		end: this.#bufferPosition * 1000 | 0
+	});
+
 	/** @param {boolean} fullscreen */
 	#sendFullscreen = fullscreen => {
 		this.#dom.disablePictureInPicture = fullscreen;
@@ -210,22 +225,6 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			event: 'fullscreen',
 			value: fullscreen
 		});
-	};
-
-	#checkBuffer = () => {
-		if (!this.#live) {
-			for (let i = 0; i < this.#dom.buffered.length; i++) {
-				const end = this.#dom.buffered.end(i);
-				if (this.#dom.buffered.start(i) <= this.#dom.currentTime && end >= this.#dom.currentTime) {
-					this.#sendMessage({
-						event: 'buffer',
-						start: this.#dom.currentTime * 1000 | 0,
-						end: end * 1000 | 0
-					});
-					break;
-				}
-			}
-		}
 	};
 
 	/** @param {number} trackId */
@@ -257,30 +256,24 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		}
 	};
 
-	#configureShaka = () => {
-		if (this.#shaka) {
-			this.#shaka.configure({
-				offline: {
-					usePersistentLicense: false
-				},
-				abr: {
-					restrictions: {
-						maxHeight: this.#maxVideoHeight,
-						maxWidth: this.#maxVideoWidth,
-						maxBandwidth: this.#maxBitrate
-					}
-				}
-			});
+	#configureShaka = () => this.#shaka.configure({
+		abr: {
+			restrictions: {
+				maxHeight: this.#maxVideoHeight,
+				maxWidth: this.#maxVideoWidth,
+				maxBandwidth: this.#maxBitrate
+			}
 		}
-	};
+	});
 
 	/**
 	 * 1: audio, 2: subtitle
 	 * @param {1|2} type
 	 */
 	#getDefaultTrack = type => {
-		const lang = type === 1 ? this.#preferredAudioLanguage : this.#preferredSubtitleLanguage,
-			getDefaultTrack = type === 1 ? this.#getDefaultAudioTrack : this.#getDefaultSubtitleTrack;
+		const [lang, getDefaultTrack] = type === 1
+			? [this.#preferredAudioLanguage, this.#getDefaultAudioTrack]
+			: [this.#preferredSubtitleLanguage, this.#getDefaultSubtitleTrack];
 		if (lang) {
 			const j = getDefaultTrack(lang);
 			if (j >= 0) {
@@ -483,8 +476,19 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			}
 		});
 		this.#dom.addEventListener('progress', () => {
-			if (this.#state > 1) {
-				this.#checkBuffer();
+			if (this.#state > 0 && !this.#live) {
+				for (let i = 0; i < this.#dom.buffered.length; i++) {
+					const end = this.#dom.buffered.end(i);
+					if (this.#dom.buffered.start(i) <= this.#dom.currentTime && end >= this.#dom.currentTime) {
+						if (this.#bufferPosition !== end) {
+							this.#bufferPosition = end;
+							if (this.#state > 1) {
+								this.#sendBuffer();
+							}
+						}
+						break;
+					}
+				}
 			}
 		});
 		this.#dom.addEventListener('loadeddata', () => {
@@ -558,7 +562,9 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				if (this.#position > 0) {
 					this.#sendPosition();
 				}
-				this.#checkBuffer();
+				if (this.#live && this.#bufferPosition > this.#dom.currentTime) {
+					this.#sendBuffer();
+				}
 				if (this.#dom.videoWidth > 0 && this.#dom.videoHeight > 0) {
 					this.#sendSize();
 				}
@@ -626,7 +632,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 									event: 'showSubtitle',
 									value: false
 								});
-							} else if (id !== this.#overrideSubtitleTrack && (this.#overrideSubtitleTrack >= 0 || id !== this.#getDefaultTrack(2))) {
+							} else if (id !== this.#overrideSubtitleTrack && this.#overrideSubtitleTrack >= 0 || id !== this.#getDefaultTrack(2)) {
 								this.#overrideSubtitleTrack = id;
 								this.#sendMessage({
 									event: 'overrideSubtitle',
@@ -665,7 +671,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 									break;
 								}
 							}
-							if (id >= 0 && id !== this.#overrideAudioTrack && (this.#overrideAudioTrack >= 0 || id !== this.#getDefaultTrack(1))) {
+							if (id >= 0 && id !== this.#overrideAudioTrack && this.#overrideAudioTrack >= 0 || id !== this.#getDefaultTrack(1)) {
 								this.#overrideAudioTrack = id;
 								this.#sendMessage({
 									event: 'overrideAudio',
@@ -680,12 +686,12 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#state = 1;
 		this.#source = url;
 		let cType = '';
-		const m = url.match(/\.(?:mpd|ism\/manifest|m3u8)/ig);
+		const m = url.match(/\.(?:mpd|m3u8|ism\/manifest)/ig);
 		if (m) {
 			const types = {
 				'.mpd': 'application/dash+xml',
-				'.ism/manifest': 'application/vnd.ms-sstr+xml',
-				'.m3u8': 'application/x-mpegurl'
+				'.m3u8': 'application/x-mpegurl',
+				'.ism/manifest': 'application/vnd.ms-sstr+xml'
 			};
 			cType = types[m[m.length - 1].toLowerCase()];
 			if (globalThis.shaka && VideoViewPlugin.#hasMSE && !VideoViewPlugin.#isApple || cType !== types['.m3u8']) {
@@ -826,7 +832,9 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	/** @param {number} bitrate */
 	setMaxBitrate(bitrate) {
 		this.#maxBitrate = bitrate;
-		this.#configureShaka();
+		if (this.#shaka) {
+			this.#configureShaka();
+		}
 	}
 
 	/**
@@ -836,13 +844,20 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	setMaxResolution(width, height) {
 		this.#maxVideoWidth = width;
 		this.#maxVideoHeight = height;
-		this.#configureShaka();
+		if (this.#shaka) {
+			this.#configureShaka();
+		}
 	}
 
 	/** @param {boolean} show */
 	setShowSubtitle(show) {
 		this.#showSubtitle = show;
-		this.#setSubtitleTrack(show ? this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2) : this.#overrideSubtitleTrack : -1);
+		this.#setSubtitleTrack(show
+			? this.#overrideSubtitleTrack < 0
+				? this.#getDefaultTrack(2)
+				: this.#overrideSubtitleTrack
+			: -1
+		);
 	}
 
 	/** @param {string?} trackId */

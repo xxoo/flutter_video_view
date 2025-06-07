@@ -42,6 +42,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 	private var maxBitrate = 0.0
 	private var showSubtitle = false
 	private var networking = false
+	private var streaming = false
 
 	init(registrar: FlutterPluginRegistrar) {
 #if os(macOS)
@@ -118,12 +119,12 @@ class VideoController: NSObject, FlutterStreamHandler {
 	}
 
 	func open(source: String) {
+		close()
 		let uri: URL?
 		if source.starts(with: "asset://") {
 			uri = URL(fileURLWithPath: Bundle.main.bundlePath + "/" + FlutterDartProject.lookupKey(forAsset: String(source.suffix(source.count - 8))))
 		} else if source.contains("://") {
 			uri = URL(string: source)
-			networking = !source.starts(with: "file://")
 		} else {
 			uri = URL(fileURLWithPath: source)
 		}
@@ -133,7 +134,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 				"value": "Invalid source"
 			])
 		} else {
-			close()
+			networking = !uri!.isFileURL
 			self.source = source
 			state = 1
 			avPlayer.replaceCurrentItem(with: AVPlayerItem(asset: AVAsset(url: uri!)))
@@ -161,6 +162,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 		reading = nil
 		rendering = nil
 		networking = false
+		streaming = false
 		mediaGroups.removeAll()
 		if avPlayer.currentItem != nil {
 			NotificationCenter.default.removeObserver(
@@ -190,7 +192,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 		let time = CMTime(seconds: Double(pos) / 1000, preferredTimescale: 1000)
 		if state == 1 {
 			position = time
-		} else if avPlayer.currentItem == nil || !(avPlayer.currentItem!.duration.seconds > 0) || avPlayer.currentTime() == time {
+		} else if streaming || avPlayer.currentItem == nil || avPlayer.currentTime() == time {
 			eventSink?(["event": "seekEnd"])
 		} else {
 			seek(to: time, fast: fast) { [weak self] finished in
@@ -285,7 +287,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 				}
 			}
 		} else {
-			if watcher == nil && avPlayer.currentItem != nil && avPlayer.currentItem!.duration.seconds > 0 {
+			if watcher == nil && avPlayer.currentItem != nil && !streaming {
 				watcher = avPlayer.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.01, preferredTimescale: 1000), queue: nil) { [weak self] time in
 					if self != nil {
 						if self!.avPlayer.rate == 0 || self!.avPlayer.error != nil {
@@ -338,6 +340,14 @@ class VideoController: NSObject, FlutterStreamHandler {
 			])
 		}
 	}
+
+	private func sendBuffer(currentTime: CMTime) {
+		eventSink?([
+			"event": "buffer",
+			"start": Int(currentTime.seconds * 1000),
+			"end": Int(bufferPosition.seconds * 1000)
+		])
+	}
 	
 	private func loadEnd() {
 		Task { @MainActor in
@@ -372,18 +382,23 @@ class VideoController: NSObject, FlutterStreamHandler {
 					}
 				}
 				avPlayer.volume = volume
-				if avPlayer.currentItem!.duration.seconds <= 0 && speed != 1 {
+				let duration = streaming ? 0 : Int(avPlayer.currentItem!.duration.seconds * 1000)
+				if duration > 0 && speed != 1 {
 					speed = 1
 				}
 				state = 2
 				eventSink?([
 					"event": "mediaInfo",
-					"duration": avPlayer.currentItem!.duration.seconds > 0 ? Int(avPlayer.currentItem!.duration.seconds * 1000) : 0,
+					"duration": duration,
 					"audioTracks": audioTracks,
 					"subtitleTracks": subtitleTracks,
 					"source": source!
 				])
-				setPosition(time: avPlayer.currentTime())
+				let time = avPlayer.currentTime()
+				setPosition(time: time)
+				if networking && !streaming && bufferPosition > time {
+					sendBuffer(currentTime: time)
+				}
 			}
 		}
 	}
@@ -462,6 +477,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 			switch avPlayer.currentItem?.status {
 			case .readyToPlay:
 				if state == 1 {
+					streaming = avPlayer.currentItem!.duration.seconds <= 0
 					if position == .zero {
 						loadEnd()
 					} else {
@@ -515,20 +531,17 @@ class VideoController: NSObject, FlutterStreamHandler {
 				])
 			}
 		case #keyPath(AVPlayer.currentItem.loadedTimeRanges):
-			if let duration = avPlayer.currentItem?.duration.seconds,
+			if networking && !streaming,
 			let currentTime = avPlayer.currentItem?.currentTime(),
-			let timeRanges = avPlayer.currentItem?.loadedTimeRanges as? [CMTimeRange],
-			state > 1 && networking && duration > 0 {
+			let timeRanges = avPlayer.currentItem?.loadedTimeRanges as? [CMTimeRange] {
 				for timeRange in timeRanges {
 					let end = timeRange.start + timeRange.duration
 					if timeRange.start <= currentTime && end >= currentTime {
 						if end != bufferPosition {
 							bufferPosition = end
-							eventSink?([
-								"event": "buffer",
-								"start": Int(currentTime.seconds * 1000),
-								"end": Int(bufferPosition.seconds * 1000)
-							])
+							if state > 1 {
+								sendBuffer(currentTime: currentTime)
+							}
 						}
 						break
 					}

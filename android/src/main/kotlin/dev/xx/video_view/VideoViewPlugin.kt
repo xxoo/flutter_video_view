@@ -262,6 +262,9 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 			"source" to source
 		))
 		watchPosition()
+		if (networking && !exoPlayer.isCurrentMediaItemLive) {
+			watchBuffer()
+		}
 	}
 
 	private fun justPlay() {
@@ -279,7 +282,9 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		handler.postDelayed({
 			if (state > 0U && networking && exoPlayer.isLoading && !exoPlayer.isCurrentMediaItemLive) {
 				startBuffering()
-				watchBuffer()
+				if (state > 1U) {
+					watchBuffer()
+				}
 			} else {
 				buffering = false
 			}

@@ -351,6 +351,16 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		}
 	}
 
+	void sendBuffer(int64_t pos) {
+		if (eventSink) {
+			eventSink->Success(EncodableMap{
+				{ string("event"), string("buffer") },
+				{ string("start"), EncodableValue(pos) },
+				{ string("end"), EncodableValue(bufferPosition) }
+			});
+		}
+	}
+
 	void loadEnd() {
 		if (state == 1) {
 			auto playbackSession = mediaPlayer.PlaybackSession();
@@ -413,6 +423,9 @@ class VideoController : public enable_shared_from_this<VideoController> {
 					{ string("source"), source }
 				});
 				setPosition();
+				if (networking && !mediaPlayer.RealTimePlayback() && bufferPosition > position) {
+					sendBuffer(position);
+				}
 			}
 		}
 	}
@@ -594,7 +607,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
 			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 1 && sharedThis->networking && !sharedThis->mediaPlayer.RealTimePlayback()) {
+				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !sharedThis->mediaPlayer.RealTimePlayback()) {
 					auto buffered = playbackSession.GetBufferedRanges();
 					for (uint32_t i = 0; i < buffered.Size(); i++) {
 						auto start = buffered.GetAt(i).Start.count();
@@ -604,12 +617,8 @@ class VideoController : public enable_shared_from_this<VideoController> {
 							auto t = end / 10000;
 							if (sharedThis->bufferPosition != t) {
 								sharedThis->bufferPosition = t;
-								if (sharedThis->eventSink) {
-									sharedThis->eventSink->Success(EncodableMap{
-										{ string("event"), string("buffer") },
-										{ string("start"), EncodableValue(pos / 10000) },
-										{ string("end"), EncodableValue(sharedThis->bufferPosition) }
-									});
+								if (sharedThis->state > 1) {
+									sharedThis->sendBuffer(pos / 10000);
 								}
 							}
 							break;
@@ -695,6 +704,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	void open(const string& src) {
+		close();
 		hstring url;
 		if (src._Starts_with("asset://")) {
 			wchar_t path[MAX_PATH];
@@ -714,7 +724,6 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			url = to_hstring(src);
 			networking = !src._Starts_with("file://");
 		}
-		close();
 		source = src;
 		state = 1;
 		mediaPlayer.Source(MediaPlaybackItem(MediaSource::CreateFromUri(winrt::Windows::Foundation::Uri(url))));

@@ -253,6 +253,14 @@ static void video_controller_send_time(const VideoController* self) {
 	fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
 }
 
+static void video_controller_send_buffer(VideoController* self, int64_t position) {
+	g_autoptr(FlValue) evt = fl_value_new_map();
+	fl_value_set_string_take(evt, "event", fl_value_new_string("buffer"));
+	fl_value_set_string_take(evt, "start", fl_value_new_int(position));
+	fl_value_set_string_take(evt, "end", fl_value_new_int(self->bufferPosition));
+	fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
+}
+
 static void video_controller_loaded(VideoController* self) {
 	int64_t count;
 	mpv_get_property(self->mpv, "track-list/count", MPV_FORMAT_INT64, &count);
@@ -359,6 +367,9 @@ static void video_controller_loaded(VideoController* self) {
 	fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
 	if (self->position > 0) {
 		video_controller_send_time(self);
+	}
+	if (self->networking && !self->streaming && self->bufferPosition > self->position) {
+		video_controller_send_buffer(self, self->position);
 	}
 }
 
@@ -539,13 +550,11 @@ static gboolean video_controller_event_callback(void* id) {
 							}
 						}
 					} else if (g_str_equal(detail->name, "demuxer-cache-time")) {
-						if (self->state > 1 && self->networking && !self->streaming) {
+						if (self->state > 0 && !self->streaming && (self->networking || self->state == 1)) {
 							self->bufferPosition = (int64_t)(*(double*)detail->data * 1000);
-							g_autoptr(FlValue) evt = fl_value_new_map();
-							fl_value_set_string_take(evt, "event", fl_value_new_string("buffer"));
-							fl_value_set_string_take(evt, "start", fl_value_new_int(video_controller_get_pos(self)));
-							fl_value_set_string_take(evt, "end", fl_value_new_int(self->bufferPosition));
-							fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
+							if (self->state > 1) {
+								video_controller_send_buffer(self, video_controller_get_pos(self));
+							}
 						}
 					} else if (g_str_equal(detail->name, "paused-for-cache")) {
 						if (self->state > 2) {

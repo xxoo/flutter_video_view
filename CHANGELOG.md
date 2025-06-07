@@ -1,3 +1,6 @@
+## 1.0.8
+- fix buffering message missing in some cases.
+
 ## 1.0.7
 - improve format detection from url on Android.
 - avoid buffering message for local files.
