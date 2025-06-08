@@ -1,3 +1,6 @@
+## 1.0.9
+- prefer previously selected track in `change` event of Web platforms.
+
 ## 1.0.8
 - fix buffering message missing in some cases.
 

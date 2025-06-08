@@ -2,7 +2,7 @@
  * @license
  * https://github.com/xxoo/flutter_video_view/blob/main/web/VideoViewPlugin.js
  * Copyright 2025 Xiao Shen.
- * Licensed under BSD2.
+ * Licensed under BSD 2-Clause.
  */
 globalThis.VideoViewPlugin = class VideoViewPlugin {
 	/** @type {boolean} */
@@ -617,13 +617,23 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				this.#subtitleOnChange = setTimeout(source => {
 					this.#subtitleOnChange = 0;
 					if (this.#state > 1 && this.#source === source) {
-						let id = -1;
+						let id = -1,
+							candidate = -1;
 						const textTracks = this.#dom.textTracks;
+						const defaultTrack = this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2) : this.#overrideSubtitleTrack;
 						for (let i = 0; i < textTracks.length; i++) {
-							if (textTracks[i].mode === 'showing') {
-								id = VideoViewPlugin.#getTrackId(textTracks, i);
-								break;
+							if (textTracks[i].mode === 'showing' && VideoViewPlugin.#isSubtitle(textTracks[i])) {
+								const trackId = VideoViewPlugin.#getTrackId(textTracks, i);
+								if (trackId === defaultTrack) {
+									id = trackId;
+									break;
+								} else if (candidate < 0) {
+									candidate = trackId;
+								}
 							}
+						}
+						if (id < 0 && candidate >= 0) {
+							id = candidate;
 						}
 						if (this.#showSubtitle) {
 							if (id < 0) {
@@ -632,7 +642,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 									event: 'showSubtitle',
 									value: false
 								});
-							} else if (id !== this.#overrideSubtitleTrack && this.#overrideSubtitleTrack >= 0 || id !== this.#getDefaultTrack(2)) {
+							} else if (id !== this.#overrideSubtitleTrack && (this.#overrideSubtitleTrack >= 0 || id !== this.#getDefaultTrack(2))) {
 								this.#overrideSubtitleTrack = id;
 								this.#sendMessage({
 									event: 'overrideSubtitle',
@@ -664,14 +674,24 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 					this.#audioOnChange = setTimeout(source => {
 						this.#audioOnChange = 0;
 						if (this.#state > 1 && !this.#shaka && this.#source === source) {
-							let id = -1;
+							let id = -1,
+								candidate = -1;
+							const defaultTrack = this.#overrideAudioTrack < 0 ? this.#getDefaultTrack(1) : this.#overrideAudioTrack;
 							for (let i = 0; i < audioTracks.length; i++) {
 								if (audioTracks[i].enabled) {
-									id = VideoViewPlugin.#getTrackId(audioTracks, i);
-									break;
+									const trackId = VideoViewPlugin.#getTrackId(audioTracks, i);
+									if (trackId === defaultTrack) {
+										id = trackId;
+										break;
+									} else if (candidate < 0) {
+										candidate = trackId;
+									}
 								}
 							}
-							if (id >= 0 && id !== this.#overrideAudioTrack && this.#overrideAudioTrack >= 0 || id !== this.#getDefaultTrack(1)) {
+							if (id < 0 && candidate >= 0) {
+								id = candidate;
+							}
+							if (id >= 0 && id !== this.#overrideAudioTrack && (this.#overrideAudioTrack >= 0 || id !== this.#getDefaultTrack(1))) {
 								this.#overrideAudioTrack = id;
 								this.#sendMessage({
 									event: 'overrideAudio',
