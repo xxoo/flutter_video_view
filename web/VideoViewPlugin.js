@@ -227,6 +227,15 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		});
 	};
 
+	/** @param {string} msg */
+	#sendError = msg => {
+		this.#close();
+		this.#sendMessage({
+			event: 'error',
+			value: msg
+		});
+	};
+
 	/** @param {number} trackId */
 	#setAudioTrack = trackId => {
 		if (this.#shaka) {
@@ -571,11 +580,8 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			}
 		});
 		this.#dom.addEventListener('error', () => {
-			if (this.#state > 1) {
-				this.#sendMessage({
-					event: 'error',
-					value: this.#dom.error.message
-				});
+			if (this.#state > 0) {
+				this.#sendError(this.#dom.error.message);
 			}
 		});
 		if (this.#dom.requestFullscreen) {
@@ -720,6 +726,23 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		}
 		if (this.#shaka) {
 			this.#configureShaka();
+			this.#shaka.addEventListener('error', evt => {
+				if (this.#state > 0 && evt.detail.severity === shaka.util.Error.Severity.CRITICAL) {
+					let categoryName = 'UNKNOWN';
+					let codeName = 'UNKNOWN';
+					for (const k in shaka.util.Error.Category) {
+						if (shaka.util.Error.Category[k] === evt.detail.category) {
+							categoryName = k;
+						}
+					}
+					for (const k in shaka.util.Error.Code) {
+						if (shaka.util.Error.Code[k] === evt.detail.code) {
+							codeName = k;
+						}
+					}
+					this.#sendError(`${categoryName}.${codeName}`);
+				}
+			});
 			this.#shaka.attach(this.#dom);
 			this.#shaka.load(url, null, cType);
 		} else {
@@ -736,7 +759,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	}
 
 	close() {
-		if (this.#dom) {
+		if (this.#state > 0) {
 			this.#close();
 		}
 	}
