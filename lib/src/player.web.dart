@@ -109,9 +109,9 @@ class VideoController extends VideoControllerInterface {
       } else if (eventName == 'showSubtitle') {
         showSubtitle.value = e['value'];
       } else if (eventName == 'overrideAudio') {
-        _overrideTrack(e['id'], true);
+        _overrideTrack(e['value'], true);
       } else if (eventName == 'overrideSubtitle') {
-        _overrideTrack(e['id'], false);
+        _overrideTrack(e['value'], false);
       }
     }.toJS,
   );

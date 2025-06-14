@@ -1,3 +1,6 @@
+## 1.0.11
+- fix a bug may cause audio and subtitle tracks out of sync on Web platforms.
+
 ## 1.0.10
 - improve error handling on Web platforms.
 
