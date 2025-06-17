@@ -36,9 +36,9 @@ jobs:
       - run: ../build/bin/flutter build web --base-href /flutter_video_view/ --wasm --release -t lib/main_advanced.dart
         working-directory: ./example
 
-      - run: perl -pi -e 's/"flutter_bootstrap.js":[^\n]+//g' flutter_service_worker.js
+      - run: perl -pi -e 's/"flutter_bootstrap.js":[^\n]+//g' example/build/web/flutter_service_worker.js
 
-      - run: perl -pi -e 's/"flutter_bootstrap.js"/"flutter.js"/g' flutter_service_worker.js
+      - run: perl -pi -e 's/"flutter_bootstrap.js"/"flutter.js"/g' example/build/web/flutter_service_worker.js
 
       - run: perl -pi -e "s/location\.origin/location.href.replace(\/\\\\\/[^\/]+\\$\/, '')/g" example/build/web/flutter_service_worker.js
 
