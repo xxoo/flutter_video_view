@@ -13,9 +13,11 @@ void main(List<String> args) async {
   } else {
     final content = await html.readAsString();
     if (!content.contains('VideoViewPlugin.js')) {
-      final newContent = content.replaceFirst(
-        RegExp(r'(?=</head>)', caseSensitive: false),
-        '  <script src="https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js"></script>\n  <script src="VideoViewPlugin.js"></script>\n',
+      final newContent = content.replaceFirstMapped(
+        RegExp(r'(?=(\s*)<script)', caseSensitive: false),
+        (m) =>
+            '${m[1] ?? ''}<script src="https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js"></script>'
+            '${m[1] ?? ''}<script src="VideoViewPlugin.js"></script>',
       );
       await html.writeAsString(newContent);
       print('referenced VideoViewPlugin.js in "${html.path}"');

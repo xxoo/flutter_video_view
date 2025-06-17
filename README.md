@@ -24,15 +24,15 @@ ___
 
 ### Installation
 
-1. Run the following command in your project directory:
+1. Add dependency in your project by running:
 ```shell
 flutter pub add video_view
 ```
-2. Add the following code to your dart file:
+2. Reference `video_view` in your Dart code:
 ```dart
 import 'package:video_view/video_view.dart';
 ```
-3. If your project has web support, you may also need to add `VideoViewPlugin.js` to your project by running:
+3. If your project has web support, you may also need to initialize the web entry point by running the following command after installing or updating `video_view` package:
 ```shell
 dart run video_view:webinit
 ```

@@ -1,3 +1,7 @@
+## 1.0.12
+- improve webinit command.
+- improve online demo.
+
 ## 1.0.11
 - fix a bug may cause audio and subtitle tracks out of sync on Web platforms.
 
