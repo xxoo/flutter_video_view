@@ -36,7 +36,7 @@ jobs:
       - run: ../build/bin/flutter build web --wasm --release -t lib/main_advanced.dart
         working-directory: ./example
 
-      - run: perl -pi -e 's/"flutter_bootstrap.js":[^\n}]+\n?//g' example/build/web/flutter_service_worker.js
+      - run: perl -pi -e 's/"(flutter_bootstrap.js|assets\/videos\/[^"]+)":[^\n}]+\n?//g' example/build/web/flutter_service_worker.js
 
       - run: perl -pi -e 's/"flutter_bootstrap.js"/"flutter.js"/g' example/build/web/flutter_service_worker.js
 
