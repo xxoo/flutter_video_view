@@ -1,3 +1,6 @@
+## 1.0.13
+- fix event handler leak on Web platforms.
+
 ## 1.0.12
 - improve webinit command.
 - improve online demo.

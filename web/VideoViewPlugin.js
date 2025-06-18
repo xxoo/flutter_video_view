@@ -155,6 +155,37 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		removeEventListener('touchmove', this.#unmute, option);
 	};
 
+	/** @param {Event} e */
+	#fullscreenChange = e => {
+		if (document.fullscreenElement === this.#dom) {
+			this.#dom.style.pointerEvents = 'auto';
+			this.#dom.controls = true;
+			this.#dom.oncontextmenu = e => e.preventDefault();
+			this.#sendFullscreen(true);
+		} else if (!document.fullscreenElement && e.target === this.#dom) {
+			this.#dom.style.pointerEvents = 'none';
+			this.#dom.controls = false;
+			this.#dom.oncontextmenu = null;
+			this.#sendFullscreen(false);
+		}
+	};
+
+	/** @param {Event} e */
+	#pictureInPictureChange = e => {
+		let v;
+		if (document.pictureInPictureElement === this.#dom) {
+			v = true;
+		} else if (!document.pictureInPictureElement && e.target === this.#dom) {
+			v = false;
+		}
+		if (v !== undefined) {
+			this.#sendMessage({
+				event: 'pictureInPicture',
+				value: v
+			});
+		}
+	};
+
 	/** @param {string} lang */
 	#getDefaultAudioTrack = lang => {
 		const tracks = this.#shaka ? this.#shaka.getAudioTracks() : this.#dom.audioTracks;
@@ -329,6 +360,12 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			this.#dom.removeAttribute('src');
 			this.#dom.load();
 		}
+		if (typeof this.#dom.requestFullscreen === 'function') {
+			removeEventListener('fullscreenchange', this.#fullscreenChange);
+		}
+		if (typeof this.#dom.requestPictureInPicture === 'function') {
+			removeEventListener('pictureinpicturechange', this.#pictureInPictureChange);
+		}
 		this.#dom = null;
 	};
 
@@ -337,7 +374,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#dom.play().catch(e => {
 			if (this.#state === state) {
 				// browser may require user interaction to play media with sound
-				// in this case, we can play the media muted first and then unmute it when user interacts with the page
+				// in this case, we can mute the media first and then unmute it when user interacts with the page
 				if (e.name === 'NotAllowedError') {
 					if (!this.#dom.muted) {
 						this.#dom.muted = true;
@@ -584,39 +621,14 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				this.#sendError(this.#dom.error.message);
 			}
 		});
-		if (this.#dom.requestFullscreen) {
-			addEventListener('fullscreenchange', e => {
-				if (document.fullscreenElement === this.#dom) {
-					this.#dom.style.pointerEvents = 'auto';
-					this.#dom.controls = true;
-					this.#dom.oncontextmenu = e => e.preventDefault();
-					this.#sendFullscreen(true);
-				} else if (!document.fullscreenElement && e.target === this.#dom) {
-					this.#dom.style.pointerEvents = 'none';
-					this.#dom.controls = false;
-					this.#dom.oncontextmenu = null;
-					this.#sendFullscreen(false);
-				}
-			});
+		if (typeof this.#dom.requestFullscreen === 'function') {
+			addEventListener('fullscreenchange', this.#fullscreenChange);
 		} else {
 			this.#dom.addEventListener('webkitbeginfullscreen', () => this.#sendFullscreen(true));
 			this.#dom.addEventListener('webkitendfullscreen', () => this.#sendFullscreen(false));
 		}
-		if (this.#dom.requestPictureInPicture) {
-			addEventListener('pictureinpicturechange', e => {
-				let v;
-				if (document.pictureInPictureElement === this.#dom) {
-					v = true;
-				} else if (!document.pictureInPictureElement && e.target === this.#dom) {
-					v = false;
-				}
-				if (v !== undefined) {
-					this.#sendMessage({
-						event: 'pictureInPicture',
-						value: v
-					});
-				}
-			});
+		if (typeof this.#dom.requestPictureInPicture === 'function') {
+			addEventListener('pictureinpicturechange', this.#pictureInPictureChange);
 		}
 		this.#dom.textTracks.addEventListener('change', () => {
 			if (this.#state > 1 && !this.#subtitleOnChange) {
