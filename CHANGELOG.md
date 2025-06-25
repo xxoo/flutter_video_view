@@ -1,3 +1,6 @@
+## 1.0.14
+- minor improvements on Web platforms.
+
 ## 1.0.13
 - fix event handler leak on Web platforms.
 

@@ -430,8 +430,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		}
 	}
 
-	public:
-
+public:
 	static void initGlobal() {
 		//init_apartment(apartment_type::single_threaded);
 		dispatcherQueue = DispatcherQueue::GetForCurrentThread();
@@ -886,8 +885,7 @@ class VideoViewPlugin : public Plugin {
 	string Id = "id";
 	string Value = "value";
 
-	public:
-
+public:
 	VideoViewPlugin(PluginRegistrarWindows& registrar) {
 		VideoController::initGlobal();
 		methodChannel = new MethodChannel<EncodableValue>(

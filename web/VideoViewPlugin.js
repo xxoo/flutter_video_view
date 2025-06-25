@@ -9,7 +9,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	static #isApple = navigator.vendor.startsWith('Apple');
 
 	/** @type {boolean} */
-	static #hasMSE = typeof ManagedMediaSource === 'function' || (typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function');
+	static #hasMSE = typeof ManagedMediaSource === 'function' || typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function';
 
 	/** @param {TextTrack} track */
 	static #isSubtitle = track => ['subtitles', 'captions', 'forced'].includes(track.kind);
@@ -192,8 +192,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		if (tracks && tracks.length) {
 			const langs = new Map(this.#shaka
 				? tracks.map((v, i) => [i, v.language ? v.language.split('-') : []])
-				: Array.prototype.map.call(tracks, (v, i) => [v.id ? +v.id : i, v.language.split('-')])
-			);
+				: Array.prototype.map.call(tracks, (v, i) => [v.id ? +v.id : i, v.language.split('-')]));
 			let j = lang ? VideoViewPlugin.#getBestMatchByLanguage(lang.split('-'), langs) : -1;
 			if (j < 0) {
 				if (this.#shaka) {
@@ -732,7 +731,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				'.ism/manifest': 'application/vnd.ms-sstr+xml'
 			};
 			cType = types[m[m.length - 1].toLowerCase()];
-			if (globalThis.shaka && VideoViewPlugin.#hasMSE && !VideoViewPlugin.#isApple || cType !== types['.m3u8']) {
+			if (globalThis.shaka && VideoViewPlugin.#hasMSE && (!VideoViewPlugin.#isApple || cType !== types['.m3u8'])) {
 				this.#shaka = new shaka.Player();
 			}
 		}
@@ -911,8 +910,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			? this.#overrideSubtitleTrack < 0
 				? this.#getDefaultTrack(2)
 				: this.#overrideSubtitleTrack
-			: -1
-		);
+			: -1);
 	}
 
 	/** @param {string?} trackId */

@@ -3,7 +3,7 @@
     "short_name": "video_view_example",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
+    "background_color": "dimgray",
     "theme_color": "#0175C2",
     "description": "Demonstrates how to use the test_project plugin.",
     "orientation": "portrait-primary",
