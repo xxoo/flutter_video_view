@@ -1,3 +1,7 @@
+## 1.0.15
+- disable download menu on Web platforms.
+- use `document.fullscreenEnabled` and `document.pictureInPictureEnabled` to determine fullscreen and picture-in-picture availability on Web platforms.
+
 ## 1.0.14
 - minor improvements on Web platforms.
 

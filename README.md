@@ -79,14 +79,14 @@ Most backends don't support manually specifying media format, with Android and W
 // No need to specify format, the url already contains `.m3u8`
 final example0 = 'https://example.com/video.m3u8';
 
-// Missing extension in path, add `.m3u8` in query string
-final example1 = 'https://example.com/video?x=.m3u8';
+// Missing extension in path, add `.m3u8` in hash fragment
+final example1 = 'https://example.com/video#.m3u8';
 
-// Override HLS to DASH format with query string
-final example2 = 'https://example.com/video.m3u8?y=.mpd';
+// Or in query string
+final example1 = 'https://example.com/video?.m3u8';
 
-// Override HLS to DASH format with hash fragment
-final example3 = 'https://example.com/video.m3u8#.mpd';
+// Override HLS to DASH
+final example2 = 'https://example.com/video.m3u8#.mpd';
 ```
 
 [^subtitle]: Only internal subtitle tracks are supported.

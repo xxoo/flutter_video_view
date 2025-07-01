@@ -1,5 +1,5 @@
 group 'dev.xx.video_view'
-version '1.0.14'
+version '1.0.15'
 
 buildscript {
 	repositories {

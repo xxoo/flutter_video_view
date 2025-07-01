@@ -424,6 +424,9 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#dom.controls = false;
 		this.#dom.autoplay = false;
 		this.#dom.loop = false;
+		if (this.#dom.controlsList) {
+			this.#dom.controlsList.add('nodownload');
+		}
 		this.#dom.addEventListener('ratechange', () => {
 			if (this.#dom.playbackRate > 2) {
 				this.#dom.playbackRate = 2;
@@ -834,21 +837,20 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 
 	/** @param {boolean} fullscreen */
 	setFullscreen(fullscreen) {
-		if (fullscreen) {
-			if (this.#dom.requestFullscreen) {
-				this.#dom.requestFullscreen();
+		if (this.#state > 0) {
+			if (document.fullscreenEnabled) {
+				if (fullscreen) {
+					this.#dom.requestFullscreen();
+				} else if (document.fullscreenElement === this.#dom) {
+					document.exitFullscreen();
+				}
 				return true;
-			} else if (this.#dom.webkitEnterFullscreen) {
-				this.#dom.webkitEnterFullscreen();
-				return true;
-			}
-		} else {
-			if (document.exitFullscreen) {
-				document.exitFullscreen();
-				return true;
-			} else if (document.webkitExitFullscreen) {
-				document.webkitExitFullscreen();
-				return true;
+			} else {
+				const methodName = fullscreen ? 'webkitEnterFullscreen' : 'webkitExitFullscreen';
+				if (typeof this.#dom[methodName] === 'function') {
+					this.#dom[methodName]();
+					return true;
+				}
 			}
 		}
 		return false;
@@ -856,10 +858,10 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 
 	/** @param {boolean} pip */
 	setPictureInPicture(pip) {
-		if (this.#dom.requestPictureInPicture) {
+		if (this.#state > 0 && document.pictureInPictureEnabled) {
 			if (pip) {
 				this.#dom.requestPictureInPicture();
-			} else {
+			} else if (document.pictureInPictureElement === this.#dom) {
 				document.exitPictureInPicture();
 			}
 			return true;

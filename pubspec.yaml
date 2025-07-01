@@ -1,13 +1,13 @@
 name: video_view
 description: "A lightweight media player with subtitle rendering and audio track switching support, leveraging system or app-level components for seamless playback."
-version: 1.0.14
+version: 1.0.15
 repository: "https://github.com/xxoo/flutter_video_view"
 issue_tracker: "https://github.com/xxoo/flutter_video_view/issues"
 topics:
   - player
   - video
   - media
-  - subtitle
+  - subtitles
   - hls
 
 environment:
