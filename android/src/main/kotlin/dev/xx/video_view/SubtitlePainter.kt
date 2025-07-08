@@ -1,4 +1,4 @@
-// this file is ported from https://raw.githubusercontent.com/androidx/media/release/libraries/ui/src/main/java/androidx/media3/ui/SubtitlePainter.java
+// this file is ported from https://github.com/androidx/media/blob/release/libraries/ui/src/main/java/androidx/media3/ui/SubtitlePainter.java
 /*
  * Copyright (C) 2016 The Android Open Source Project
  *
@@ -265,7 +265,7 @@ class SubtitlePainter(context: Context) {
 		// Remove embedded font color to not destroy edges, otherwise it overrides edge color.
 		val cueTextEdge = SpannableStringBuilder(cueText)
 		if (edgeType == CaptionStyleCompat.EDGE_TYPE_OUTLINE) {
-			cueTextEdge.getSpans<ForegroundColorSpan>(0, cueTextEdge.length, ForegroundColorSpan::class.java)
+			cueTextEdge.getSpans(0, cueTextEdge.length, ForegroundColorSpan::class.java)
 				.forEach { cueTextEdge.removeSpan(it) }
 		}
 
@@ -441,24 +441,28 @@ class SubtitlePainter(context: Context) {
 				)
 			}
 
-			if (edgeType == CaptionStyleCompat.EDGE_TYPE_OUTLINE) {
-				textPaint.strokeJoin = Join.ROUND
-				textPaint.strokeWidth = outlineWidth
-				textPaint.color = edgeColor
-				textPaint.style = Style.FILL_AND_STROKE
-				edgeLayout.draw(canvas)
-			} else if (edgeType == CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW) {
-				textPaint.setShadowLayer(shadowRadius, shadowOffset, shadowOffset, edgeColor)
-			} else if (edgeType == CaptionStyleCompat.EDGE_TYPE_RAISED || edgeType == CaptionStyleCompat.EDGE_TYPE_DEPRESSED) {
-				val raised = edgeType == CaptionStyleCompat.EDGE_TYPE_RAISED
-				val colorUp = if (raised) Color.WHITE else edgeColor
-				val colorDown = if (raised) edgeColor else Color.WHITE
-				val offset = shadowRadius / 2f
-				textPaint.color = foregroundColor
-				textPaint.style = Style.FILL
-				textPaint.setShadowLayer(shadowRadius, -offset, -offset, colorUp)
-				edgeLayout.draw(canvas)
-				textPaint.setShadowLayer(shadowRadius, offset, offset, colorDown)
+			when (edgeType) {
+				CaptionStyleCompat.EDGE_TYPE_OUTLINE -> {
+					textPaint.strokeJoin = Join.ROUND
+					textPaint.strokeWidth = outlineWidth
+					textPaint.color = edgeColor
+					textPaint.style = Style.FILL_AND_STROKE
+					edgeLayout.draw(canvas)
+				}
+				CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW -> {
+					textPaint.setShadowLayer(shadowRadius, shadowOffset, shadowOffset, edgeColor)
+				}
+				CaptionStyleCompat.EDGE_TYPE_RAISED, CaptionStyleCompat.EDGE_TYPE_DEPRESSED -> {
+					val raised = edgeType == CaptionStyleCompat.EDGE_TYPE_RAISED
+					val colorUp = if (raised) Color.WHITE else edgeColor
+					val colorDown = if (raised) edgeColor else Color.WHITE
+					val offset = shadowRadius / 2f
+					textPaint.color = foregroundColor
+					textPaint.style = Style.FILL
+					textPaint.setShadowLayer(shadowRadius, -offset, -offset, colorUp)
+					edgeLayout.draw(canvas)
+					textPaint.setShadowLayer(shadowRadius, offset, offset, colorDown)
+				}
 			}
 
 			textPaint.color = foregroundColor

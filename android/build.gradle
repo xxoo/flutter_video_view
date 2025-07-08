@@ -1,5 +1,5 @@
 group 'dev.xx.video_view'
-version '1.0.15'
+version '1.0.16'
 
 buildscript {
 	repositories {
@@ -8,8 +8,8 @@ buildscript {
 	}
 
 	dependencies {
-		classpath 'com.android.tools.build:gradle:8.10.1'
-		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21"
+		classpath 'com.android.tools.build:gradle:8.11.0'
+		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.0"
 	}
 }
 
@@ -23,18 +23,16 @@ allprojects {
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 android {
 	if (project.android.hasProperty("namespace")) {
 		namespace 'dev.xx.video_view'
 	}
 
-	compileOptions {
-		sourceCompatibility JavaVersion.VERSION_1_8
-		targetCompatibility JavaVersion.VERSION_1_8
-	}
-
-	kotlinOptions {
-		jvmTarget = '1.8'
+	kotlin {
+		compilerOptions {
+			jvmTarget = JvmTarget.DEFAULT
+		}
 	}
 
 	sourceSets {

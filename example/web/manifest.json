@@ -4,8 +4,8 @@
     "start_url": ".",
     "display": "standalone",
     "background_color": "dimgray",
-    "theme_color": "#0175C2",
-    "description": "Demonstrates how to use the test_project plugin.",
+    "theme_color": "black",
+    "description": "Demonstrates how to use the video_view plugin.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

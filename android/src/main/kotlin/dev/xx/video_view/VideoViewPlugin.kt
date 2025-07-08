@@ -75,10 +75,12 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		val ext = if (match.any()) match.last().value.lowercase() else ""
 		try {
 			exoPlayer.setMediaItem(
-				if (ext == ".m3u8") MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
-				else if (ext == ".mpd") MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_MPD).build()
-				else if (ext == ".ism/manifest") MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_SS).build()
-				else MediaItem.fromUri(url)
+				when (ext) {
+					".m3u8" -> MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_M3U8).build()
+					".mpd" -> MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_MPD).build()
+					".ism/manifest" -> MediaItem.Builder().setUri(url).setMimeType(MimeTypes.APPLICATION_SS).build()
+					else -> MediaItem.fromUri(url)
+				}
 			)
 			exoPlayer.prepare()
 			state = 1U
