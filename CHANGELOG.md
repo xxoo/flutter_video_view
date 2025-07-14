@@ -1,3 +1,9 @@
+## 1.1.0
+- **breaking change:** replace `fullscreen` and `pictureInPicture` with `displayMode` in `VideoController` class.
+- **breaking change:** replace `setFullscreen()` and `setPictureInPicture()` with `setDisplayMode()` in `VideoController` class.
+- fix a bug may cause video stop playing on Web platforms when `videoFit` changes.
+- fix a bug may cause `BoxFit.fitWidth` and `BoxFit.fitHeight` not working as expected with fullscreen on Web platforms.
+
 ## 1.0.16
 - minor improvements.
 

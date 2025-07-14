@@ -11,14 +11,14 @@ class AppView extends StatefulWidget {
   const AppView({super.key});
 
   @override
-  State<AppView> createState() => _AppViewState();
+  createState() => _AppViewState();
 }
 
 class _AppViewState extends State<AppView> {
   var _appRoute = AppRoute.values.first;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  build(_) => Scaffold(
     appBar: AppBar(title: const Text('video_view advanced example')),
     body: _buildBody(),
     bottomNavigationBar: BottomNavigationBar(
@@ -33,7 +33,7 @@ class _AppViewState extends State<AppView> {
       case AppRoute.trackSelector:
         return const TrackSelector();
       case AppRoute.videoList:
-        return const VideoList();
+        return makeVideoList();
       case AppRoute.videoPlayer:
         return const VideoPlayer();
     }

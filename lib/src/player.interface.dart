@@ -77,13 +77,11 @@ abstract class VideoControllerInterface {
   /// By default, the player does not show any subtitle. Regardless of the preferred subtitle language or override tracks.
   final showSubtitle = VideoControllerProperty(false);
 
-  /// Indicates whether the player is in fullscreen mode.
-  /// This API only works on web.
-  final fullscreen = VideoControllerProperty(false);
-
-  /// Indicates whether the player is in picture in picture mode.
-  /// This API only works on web.
-  final pictureInPicture = VideoControllerProperty(false);
+  /// The current presentation mode of the video.
+  /// The value is always [VideoControllerDisplayMode.normal] on native platforms.
+  final displayMode = VideoControllerProperty(
+    VideoControllerDisplayMode.normal,
+  );
 
   /// All parameters are optional, and can be changed later by calling the corresponding methods.
   VideoControllerInterface({
@@ -208,11 +206,7 @@ abstract class VideoControllerInterface {
   /// [trackId] should be a key of [VideoControllerMediaInfo.subtitleTracks].
   bool setOverrideSubtitle(String? trackId);
 
-  /// Set whether the player should be fullscreen.
+  /// Set video display mode.
   /// This API only works on web.
-  bool setFullscreen(bool value);
-
-  /// Set whether the player should be in picture in picture mode.
-  /// This API only works on web.
-  bool setPictureInPicture(bool value);
+  bool setDisplayMode(VideoControllerDisplayMode mode);
 }

@@ -11,14 +11,14 @@ class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
   var _loading = true;
 
   @override
-  Widget build(BuildContext context) => Stack(
+  build(_) => Stack(
     alignment: Alignment.center,
     children: [
       VideoView(

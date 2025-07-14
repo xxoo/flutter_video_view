@@ -1,11 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'player.native.dart';
 
-Widget makeWidget(
-  VideoController player,
-  BoxFit videoFit,
-  Color backgroundColor,
-) => FittedBox(
+FittedBox makeWidget(VideoController player, BoxFit videoFit, _) => FittedBox(
   fit: videoFit,
   clipBehavior: Clip.hardEdge,
   child: SizedBox(

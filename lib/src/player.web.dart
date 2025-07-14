@@ -102,10 +102,8 @@ class VideoController extends VideoControllerInterface {
         speed.value = e['value'];
       } else if (eventName == 'volume') {
         volume.value = e['value'];
-      } else if (eventName == 'fullscreen') {
-        fullscreen.value = e['value'];
-      } else if (eventName == 'pictureInPicture') {
-        pictureInPicture.value = e['value'];
+      } else if (eventName == 'displayMode') {
+        displayMode.value = VideoControllerDisplayMode.values[e['value']];
       } else if (eventName == 'showSubtitle') {
         showSubtitle.value = e['value'];
       } else if (eventName == 'overrideAudio') {
@@ -135,7 +133,7 @@ class VideoController extends VideoControllerInterface {
   });
 
   @override
-  void dispose() {
+  dispose() {
     if (!disposed) {
       _disposed = true;
       VideoViewPlugin.destroy(_plugin);
@@ -163,7 +161,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  void close() {
+  close() {
     if (!disposed) {
       _source = null;
       if (playbackState.value != VideoControllerPlaybackState.closed ||
@@ -176,7 +174,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  void open(String source) {
+  open(source) {
     if (!disposed) {
       _source = source;
       error.value = null;
@@ -187,7 +185,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool play() {
+  play() {
     if (!disposed) {
       if (playbackState.value == VideoControllerPlaybackState.paused) {
         _plugin.play();
@@ -203,7 +201,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool pause() {
+  pause() {
     if (!disposed) {
       if (playbackState.value == VideoControllerPlaybackState.playing) {
         _plugin.pause();
@@ -219,7 +217,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool seekTo(int value, {bool fast = false}) {
+  seekTo(value, {fast = false}) {
     if (!disposed) {
       if (mediaInfo.value == null) {
         // ignore position if it's less than 30 ms
@@ -241,7 +239,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setAutoPlay(bool value) {
+  setAutoPlay(value) {
     if (!disposed && value != autoPlay.value) {
       autoPlay.value = value;
       _plugin.setAutoPlay(value);
@@ -251,7 +249,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setLooping(bool value) {
+  setLooping(value) {
     if (!disposed && value != looping.value) {
       looping.value = value;
       _plugin.setLooping(value);
@@ -261,7 +259,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setShowSubtitle(bool value) {
+  setShowSubtitle(value) {
     if (!disposed && value != showSubtitle.value) {
       showSubtitle.value = value;
       _plugin.setShowSubtitle(value);
@@ -271,7 +269,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setSpeed(double value) {
+  setSpeed(value) {
     if (!disposed && mediaInfo.value?.duration != 0) {
       _plugin.setSpeed(value);
       return true;
@@ -280,7 +278,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setVolume(double value) {
+  setVolume(value) {
     if (!disposed) {
       _plugin.setVolume(value);
       return true;
@@ -289,7 +287,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setMaxBitRate(int value) {
+  setMaxBitRate(value) {
     if (!disposed && value >= 0 && value != maxBitRate.value) {
       maxBitRate.value = value;
       _plugin.setMaxBitRate(value);
@@ -298,7 +296,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setMaxResolution(Size value) {
+  setMaxResolution(value) {
     if (!disposed &&
         value.width >= 0 &&
         value.height >= 0 &&
@@ -311,7 +309,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setPreferredAudioLanguage(String? value) {
+  setPreferredAudioLanguage(value) {
     if (!disposed && value != preferredAudioLanguage.value) {
       preferredAudioLanguage.value = value;
       _plugin.setPreferredAudioLanguage(value ?? '');
@@ -321,7 +319,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setPreferredSubtitleLanguage(String? value) {
+  setPreferredSubtitleLanguage(value) {
     if (!disposed && value != preferredSubtitleLanguage.value) {
       preferredSubtitleLanguage.value = value;
       _plugin.setPreferredSubtitleLanguage(value ?? '');
@@ -331,7 +329,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setOverrideAudio(String? trackId) {
+  setOverrideAudio(trackId) {
     if (!disposed) {
       final result = _overrideTrack(trackId, true);
       if (result) {
@@ -343,7 +341,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setOverrideSubtitle(String? trackId) {
+  setOverrideSubtitle(trackId) {
     if (!disposed) {
       final result = _overrideTrack(trackId, false);
       if (result) {
@@ -355,17 +353,11 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setFullscreen(bool value) {
+  setDisplayMode(value) {
     if (!disposed && videoSize.value != Size.zero) {
-      return _plugin.setFullscreen(value);
-    }
-    return false;
-  }
-
-  @override
-  bool setPictureInPicture(bool value) {
-    if (!disposed && videoSize.value != Size.zero) {
-      return _plugin.setPictureInPicture(value);
+      return _plugin.setDisplayMode(
+        VideoControllerDisplayMode.values.indexOf(value),
+      );
     }
     return false;
   }
@@ -415,6 +407,7 @@ class VideoController extends VideoControllerInterface {
     finishedTimes.value = 0;
     playbackState.value = VideoControllerPlaybackState.closed;
     overrideAudio.value = overrideSubtitle.value = null;
+    displayMode.value = VideoControllerDisplayMode.normal;
   }
 }
 

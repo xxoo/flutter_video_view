@@ -42,8 +42,7 @@ extension type VideoViewPlugin._(JSObject _) implements JSObject {
   external void setShowSubtitle(bool show);
   external void setOverrideAudio(String? trackId);
   external void setOverrideSubtitle(String? trackId);
-  external bool setFullscreen(bool fullscreen);
-  external bool setPictureInPicture(bool pictureInPicture);
+  external bool setDisplayMode(int displayMode);
   external void setBackgroundColor(int color);
   external void setVideoFit(String objectFit);
 }

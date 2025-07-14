@@ -8,7 +8,7 @@ class TrackSelector extends StatefulWidget {
   const TrackSelector({super.key});
 
   @override
-  State<TrackSelector> createState() => _TrackSelectorViewState();
+  createState() => _TrackSelectorViewState();
 }
 
 class _TrackSelectorViewState extends State<TrackSelector> {
@@ -51,17 +51,20 @@ class _TrackSelectorViewState extends State<TrackSelector> {
         );
       }
     });
+    _player.displayMode.addListener(
+      () => debugPrint('Display mode: ${_player.displayMode.value}'),
+    );
   }
 
   @override
-  void dispose() {
+  dispose() {
     //We should dispose this player. cause it's created by us.
     _player.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
+  build(_) => SingleChildScrollView(
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -167,11 +170,17 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.picture_in_picture),
-                      onPressed: () => _player.setPictureInPicture(true),
+                      onPressed:
+                          () => _player.setDisplayMode(
+                            VideoControllerDisplayMode.pictureInPicture,
+                          ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.fullscreen),
-                      onPressed: () => _player.setFullscreen(true),
+                      onPressed:
+                          () => _player.setDisplayMode(
+                            VideoControllerDisplayMode.fullscreen,
+                          ),
                     ),
                   ],
                 ],

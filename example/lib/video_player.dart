@@ -13,7 +13,7 @@ class VideoPlayer extends StatefulWidget {
   const VideoPlayer({super.key});
 
   @override
-  State<VideoPlayer> createState() => _VideoPlayerViewState();
+  createState() => _VideoPlayerViewState();
 }
 
 class _VideoPlayerViewState extends State<VideoPlayer> {
@@ -66,20 +66,23 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
         );
       }
     });
+    _player.displayMode.addListener(
+      () => debugPrint('Display mode: ${_player.displayMode.value}'),
+    );
     _inputController.text =
         'https://dash.akamaized.net/akamai/test/caption_test/ElephantsDream/ElephantsDream_en.vtt';
     _setSubtitle(_inputController.text);
   }
 
   @override
-  void dispose() {
+  dispose() {
     //We should dispose this player. cause it's created by us.
     _player.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
+  build(_) => SingleChildScrollView(
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -237,11 +240,17 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.picture_in_picture),
-                      onPressed: () => _player.setPictureInPicture(true),
+                      onPressed:
+                          () => _player.setDisplayMode(
+                            VideoControllerDisplayMode.pictureInPicture,
+                          ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.fullscreen),
-                      onPressed: () => _player.setFullscreen(true),
+                      onPressed:
+                          () => _player.setDisplayMode(
+                            VideoControllerDisplayMode.fullscreen,
+                          ),
                     ),
                   ],
                 ],

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:set_state_async/set_state_async.dart';
+import 'player.common.dart';
 import 'player.native.dart' if (dart.library.js_interop) 'player.web.dart';
 import 'widget.native.dart' if (dart.library.js_interop) 'widget.web.dart';
 
@@ -60,7 +61,7 @@ class VideoView extends StatefulWidget {
   });
 
   @override
-  State<VideoView> createState() => _VideoControllerState();
+  createState() => _VideoControllerState();
 }
 
 class _VideoControllerState extends State<VideoView> with SetStateAsync {
@@ -70,7 +71,8 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
   OverlayEntry? _overlayEntry;
 
   void _fullscreenChange() {
-    if (!_controller.fullscreen.value) {
+    if (_controller.displayMode.value !=
+        VideoControllerDisplayMode.fullscreen) {
       _clearOverlay();
     } else if (_overlayEntry == null) {
       _overlayEntry = OverlayEntry(
@@ -90,7 +92,7 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
   }
 
   @override
-  void initState() {
+  initState() {
     super.initState();
     if (widget.controller == null || widget.controller!.disposed) {
       _controller = VideoController(
@@ -151,19 +153,19 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
     _controller.videoSize.addListener(setStateAsync);
     _controller.showSubtitle.addListener(setStateAsync);
     if (kIsWeb) {
-      _controller.fullscreen.addListener(_fullscreenChange);
+      _controller.displayMode.addListener(_fullscreenChange);
     }
   }
 
   @override
-  void dispose() {
+  dispose() {
     if (!_foreignController) {
       _controller.dispose();
     } else if (!_controller.disposed) {
       _controller.videoSize.removeListener(setStateAsync);
       _controller.showSubtitle.removeListener(setStateAsync);
       if (kIsWeb) {
-        _controller.fullscreen.removeListener(_fullscreenChange);
+        _controller.displayMode.removeListener(_fullscreenChange);
         _clearOverlay();
       }
     }
@@ -171,7 +173,7 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
   }
 
   @override
-  Widget build(BuildContext context) => Container(
+  build(_) => Container(
     width: widget.width,
     height: widget.height,
     color: widget.backgroundColor,

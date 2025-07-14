@@ -3,8 +3,11 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+/// This type is used by [VideoControllerInterface.displayMode].
+enum VideoControllerDisplayMode { normal, fullscreen, pictureInPicture }
+
 /// This type is used by [VideoControllerInterface.playbackState].
-enum VideoControllerPlaybackState { playing, paused, closed }
+enum VideoControllerPlaybackState { closed, paused, playing }
 
 /// This class is used by [VideoControllerInterface] to notify listeners when
 /// property changes. The [value] setter is protected, you may see warnings

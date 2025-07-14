@@ -8,32 +8,28 @@ import 'package:set_state_async/set_state_async.dart';
 import 'package:video_view/video_view.dart';
 import 'sources.dart';
 
-class VideoList extends StatelessWidget {
-  const VideoList({super.key});
-
-  @override
-  Widget build(BuildContext context) => InViewNotifierList(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 200),
-    isInViewPortCondition:
-        (top, bottom, height) => top * 2 <= height && bottom * 2 > height,
-    builder: (context, index) => _VideoItem(index),
-    itemCount: videoSources.length,
-  );
-}
+InViewNotifierList makeVideoList() => InViewNotifierList(
+  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 200),
+  isInViewPortCondition:
+      (top, bottom, height) => top * 2 <= height && bottom * 2 > height,
+  builder: (context, index) => _VideoItem(index),
+  itemCount: videoSources.length,
+);
 
 class _VideoItem extends StatefulWidget {
   final int index;
   const _VideoItem(this.index);
 
   @override
-  State<_VideoItem> createState() => _VideoItemState();
+  createState() => _VideoItemState();
 }
 
 class _VideoItemState extends State<_VideoItem> with SetStateAsync {
   VideoController? thisPlayer;
   bool inView = false;
+
   @override
-  Widget build(BuildContext context) => InViewNotifierWidget(
+  build(_) => InViewNotifierWidget(
     id: '${widget.index}',
     child: Container(
       margin:

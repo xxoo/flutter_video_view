@@ -181,7 +181,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  void dispose() {
+  dispose() {
     if (!disposed) {
       _disposed = true;
       _eventSubscription?.cancel();
@@ -211,7 +211,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  void close() {
+  close() {
     if (!disposed) {
       _source = null;
       if (id != null &&
@@ -225,7 +225,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  void open(String source) {
+  open(source) {
     if (!disposed) {
       _source = source;
       if (id != null) {
@@ -238,7 +238,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool play() {
+  play() {
     if (!disposed) {
       if (id != null &&
           playbackState.value == VideoControllerPlaybackState.paused) {
@@ -256,7 +256,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool pause() {
+  pause() {
     if (!disposed) {
       if (id != null &&
           playbackState.value == VideoControllerPlaybackState.playing) {
@@ -277,7 +277,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool seekTo(int position, {bool fast = false}) {
+  seekTo(position, {fast = false}) {
     if (!disposed) {
       if (id == null) {
         _position = position;
@@ -311,7 +311,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setVolume(double value) {
+  setVolume(value) {
     if (!disposed) {
       if (value < 0) {
         value = 0;
@@ -326,7 +326,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setSpeed(double value) {
+  setSpeed(value) {
     if (!disposed && mediaInfo.value?.duration != 0) {
       if (value < 0.5) {
         value = 0.5;
@@ -343,7 +343,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setLooping(bool value) {
+  setLooping(value) {
     if (!disposed && value != looping.value) {
       looping.value = value;
       if (id != null) {
@@ -355,7 +355,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setAutoPlay(bool value) {
+  setAutoPlay(value) {
     if (!disposed && value != autoPlay.value) {
       autoPlay.value = value;
       return true;
@@ -364,7 +364,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setMaxResolution(Size value) {
+  setMaxResolution(value) {
     if (!disposed &&
         value.width >= 0 &&
         value.height >= 0 &&
@@ -380,7 +380,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setMaxBitRate(int value) {
+  setMaxBitRate(value) {
     if (!disposed && value >= 0 && value != maxBitRate.value) {
       maxBitRate.value = value;
       if (id != null) {
@@ -392,7 +392,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setPreferredAudioLanguage(String? value) {
+  setPreferredAudioLanguage(value) {
     if (!disposed && value != preferredAudioLanguage.value) {
       preferredAudioLanguage.value = value;
       if (id != null) {
@@ -404,7 +404,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setPreferredSubtitleLanguage(String? value) {
+  setPreferredSubtitleLanguage(value) {
     if (!disposed && value != preferredSubtitleLanguage.value) {
       preferredSubtitleLanguage.value = value;
       if (id != null) {
@@ -416,7 +416,7 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setShowSubtitle(bool value) {
+  setShowSubtitle(value) {
     if (!disposed && value != showSubtitle.value) {
       showSubtitle.value = value;
       if (id != null) {
@@ -428,16 +428,13 @@ class VideoController extends VideoControllerInterface {
   }
 
   @override
-  bool setOverrideAudio(String? trackId) => _overrideTrack(trackId, true);
+  setOverrideAudio(trackId) => _overrideTrack(trackId, true);
 
   @override
-  bool setOverrideSubtitle(String? trackId) => _overrideTrack(trackId, false);
+  setOverrideSubtitle(trackId) => _overrideTrack(trackId, false);
 
   @override
-  bool setFullscreen(bool value) => false;
-
-  @override
-  bool setPictureInPicture(bool value) => false;
+  setDisplayMode(_) => false;
 
   bool _overrideTrack(String? trackId, bool isAudio) {
     if (!disposed && mediaInfo.value != null) {

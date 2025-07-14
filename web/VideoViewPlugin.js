@@ -5,11 +5,14 @@
  * Licensed under BSD 2-Clause.
  */
 globalThis.VideoViewPlugin = class VideoViewPlugin {
-	/** @type {boolean} */
 	static #isApple = navigator.vendor.startsWith('Apple');
 
-	/** @type {boolean} */
 	static #hasMSE = typeof ManagedMediaSource === 'function' || typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function';
+
+	static #unmuteOption = {
+		capture: true,
+		passive: true
+	};
 
 	/** @param {TextTrack} track */
 	static #isSubtitle = track => ['subtitles', 'captions', 'forced'].includes(track.kind);
@@ -71,11 +74,45 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		}
 	};
 
-	/** @type {HTMLVideoElement?} */
-	#dom = null;
+	#looping = false;
 
-	/** @type {shaka.Player|undefined} */
-	#shaka = null;
+	#autoPlay = false;
+
+	#volume = 1;
+
+	#speed = 1;
+
+	#playTime = 0;
+
+	#preferredAudioLanguage = '';
+
+	#preferredSubtitleLanguage = '';
+
+	#maxBitrate = Infinity;
+
+	#maxVideoWidth = Infinity;
+
+	#maxVideoHeight = Infinity;
+
+	#overrideAudioTrack = -1;
+
+	#overrideSubtitleTrack = -1;
+
+	#showSubtitle = false;
+
+	#live = false;
+
+	#source = '';
+
+	#position = 0;
+
+	#bufferPosition = 0;
+
+	#subtitleOnChange = 0;
+
+	#audioOnChange = 0;
+
+	#fitWidth = false;
 
 	/** 
 	 * 0: idle, 1: opening, 2: ready, 3: playing
@@ -83,109 +120,57 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	 */
 	#state = 0;
 
-	/** @type {boolean} */
-	#looping = false;
-
-	/** @type {boolean} */
-	#autoPlay = false;
-
-	/** @type {number} */
-	#volume = 1;
-
-	/** @type {number} */
-	#speed = 1;
-
-	/** @type {number} */
-	#playTime = 0;
-
-	/** @type {string} */
-	#preferredAudioLanguage = '';
-
-	/** @type {string} */
-	#preferredSubtitleLanguage = '';
-
-	/** @type {number} */
-	#maxBitrate = Infinity;
-
-	/** @type {number} */
-	#maxVideoWidth = Infinity;
-
-	/** @type {number} */
-	#maxVideoHeight = Infinity;
-
-	/** @type {number} */
-	#overrideAudioTrack = -1;
-
-	/** @type {number} */
-	#overrideSubtitleTrack = -1;
-
-	/** @type {boolean} */
-	#showSubtitle = false;
-
-	/** @type {boolean} */
-	#live = false;
-
-	/** @type {string} */
-	#source = '';
-
-	/** @type {number} */
-	#position = 0;
-
-	/** @type {number} */
-	#bufferPosition = 0;
-
 	/** @type {function(object):void} */
 	#sendMessage;
 
-	/** @type {number} */
-	#subtitleOnChange = 0;
+	/** @type {HTMLVideoElement?} */
+	#dom = null;
 
-	/** @type {number} */
-	#audioOnChange = 0;
+	/** @type {shaka.Player?} */
+	#shaka = null;
+
+	/** @type {ResizeObserver?} */
+	#observer = null;
+
+	#onresize = () => this.#dom.style.objectFit = this.#dom.videoWidth / this.#dom.videoHeight > this.#dom.width / this.#dom.height
+		? this.#fitWidth ? 'contain' : 'cover'
+		: this.#fitWidth ? 'cover' : 'contain';
 
 	#unmute = () => {
 		if (this.#dom.muted) {
 			this.#dom.muted = false;
-			const option = { capture: true };
-			removeEventListener('keydown', this.#unmute, option);
-			removeEventListener('keyup', this.#unmute, option);
-			removeEventListener('mousedown', this.#unmute, option);
-			removeEventListener('mouseup', this.#unmute, option);
-			removeEventListener('touchstart', this.#unmute, option);
-			removeEventListener('touchend', this.#unmute, option);
-			removeEventListener('touchmove', this.#unmute, option);
+			removeEventListener('keydown', this.#unmute, VideoViewPlugin.#unmuteOption);
+			removeEventListener('keyup', this.#unmute, VideoViewPlugin.#unmuteOption);
+			removeEventListener('mousedown', this.#unmute, VideoViewPlugin.#unmuteOption);
+			removeEventListener('mouseup', this.#unmute, VideoViewPlugin.#unmuteOption);
+			removeEventListener('touchstart', this.#unmute, VideoViewPlugin.#unmuteOption);
+			removeEventListener('touchend', this.#unmute, VideoViewPlugin.#unmuteOption);
+			removeEventListener('touchmove', this.#unmute, VideoViewPlugin.#unmuteOption);
 		}
 	};
 
 	/** @param {Event} e */
-	#fullscreenChange = e => {
-		if (document.fullscreenElement === this.#dom) {
+	#displayModeChange = e => {
+		if (e.target === this.#dom) {
+			this.#sendDisplayMode(document.fullscreenElement === this.#dom ? 1
+				: document.pictureInPictureElement === this.#dom ? 2
+					: 0);
+		}
+	};
+
+	/** @param {0|1|2} mode */
+	#sendDisplayMode = mode => {
+		if (mode === 1) {
 			this.#dom.style.pointerEvents = 'auto';
 			this.#dom.controls = true;
-			this.#dom.oncontextmenu = e => e.preventDefault();
-			this.#sendFullscreen(true);
-		} else if (!document.fullscreenElement && e.target === this.#dom) {
+		} else {
 			this.#dom.style.pointerEvents = 'none';
 			this.#dom.controls = false;
-			this.#dom.oncontextmenu = null;
-			this.#sendFullscreen(false);
 		}
-	};
-
-	/** @param {Event} e */
-	#pictureInPictureChange = e => {
-		let v;
-		if (document.pictureInPictureElement === this.#dom) {
-			v = true;
-		} else if (!document.pictureInPictureElement && e.target === this.#dom) {
-			v = false;
-		}
-		if (v !== undefined) {
-			this.#sendMessage({
-				event: 'pictureInPicture',
-				value: v
-			});
-		}
+		this.#sendMessage({
+			event: 'displayMode',
+			value: mode
+		});
 	};
 
 	/** @param {string} lang */
@@ -249,15 +234,6 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		start: this.#dom.currentTime * 1000 | 0,
 		end: this.#bufferPosition * 1000 | 0
 	});
-
-	/** @param {boolean} fullscreen */
-	#sendFullscreen = fullscreen => {
-		this.#dom.disablePictureInPicture = fullscreen;
-		this.#sendMessage({
-			event: 'fullscreen',
-			value: fullscreen
-		});
-	};
 
 	/** @param {string} msg */
 	#sendError = msg => {
@@ -362,12 +338,19 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			this.#dom.removeAttribute('src');
 			this.#dom.load();
 		}
-		if (document.fullscreenEnabled) {
-			removeEventListener('fullscreenchange', this.#fullscreenChange);
+		if (!VideoViewPlugin.#isApple) {
+			if (document.fullscreenEnabled) {
+				removeEventListener('fullscreenchange', this.#displayModeChange);
+			}
+			if (document.pictureInPictureEnabled) {
+				removeEventListener('enterpictureinpicture', this.#displayModeChange);
+				removeEventListener('leavepictureinpicture', this.#displayModeChange);
+				if (document.pictureInPictureElement === this.#dom) {
+					document.exitPictureInPicture();
+				}
+			}
 		}
-		if (document.pictureInPictureEnabled) {
-			removeEventListener('pictureinpicturechange', this.#pictureInPictureChange);
-		}
+		this.setVideoFit('');
 		this.#dom = null;
 	};
 
@@ -380,17 +363,13 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				if (e.name === 'NotAllowedError') {
 					if (!this.#dom.muted) {
 						this.#dom.muted = true;
-						const option = {
-							capture: true,
-							passive: true
-						};
-						addEventListener('keydown', this.#unmute, option);
-						addEventListener('keyup', this.#unmute, option);
-						addEventListener('mousedown', this.#unmute, option);
-						addEventListener('mouseup', this.#unmute, option);
-						addEventListener('touchstart', this.#unmute, option);
-						addEventListener('touchend', this.#unmute, option);
-						addEventListener('touchmove', this.#unmute, option);
+						addEventListener('keydown', this.#unmute, VideoViewPlugin.#unmuteOption);
+						addEventListener('keyup', this.#unmute, VideoViewPlugin.#unmuteOption);
+						addEventListener('mousedown', this.#unmute, VideoViewPlugin.#unmuteOption);
+						addEventListener('mouseup', this.#unmute, VideoViewPlugin.#unmuteOption);
+						addEventListener('touchstart', this.#unmute, VideoViewPlugin.#unmuteOption);
+						addEventListener('touchend', this.#unmute, VideoViewPlugin.#unmuteOption);
+						addEventListener('touchmove', this.#unmute, VideoViewPlugin.#unmuteOption);
 					}
 					this.#play();
 				}
@@ -415,6 +394,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	open(url) {
 		this.close();
 		this.#dom = document.createElement('video');
+		this.#dom.style.display = 'block';
 		this.#dom.style.width = '100%';
 		this.#dom.style.height = '100%';
 		this.#dom.style.pointerEvents = 'none';
@@ -429,6 +409,11 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#dom.loop = false;
 		if (this.#dom.controlsList) {
 			this.#dom.controlsList.add('nodownload');
+		}
+		if ('webkitTouchCallout' in this.#dom.style) {
+			this.#dom.style.webkitTouchCallout = 'none';
+		} else {
+			this.#dom.addEventListener('contextmenu', e => e.preventDefault());
 		}
 		this.#dom.addEventListener('ratechange', () => {
 			if (this.#dom.playbackRate > 2) {
@@ -626,14 +611,24 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				this.#sendError(this.#dom.error.message);
 			}
 		});
-		if (document.fullscreenEnabled) {
-			addEventListener('fullscreenchange', this.#fullscreenChange);
-		} else if (this.#dom.webkitSupportsFullscreen) {
-			this.#dom.addEventListener('webkitbeginfullscreen', () => this.#sendFullscreen(true));
-			this.#dom.addEventListener('webkitendfullscreen', () => this.#sendFullscreen(false));
-		}
-		if (document.pictureInPictureEnabled) {
-			addEventListener('pictureinpicturechange', this.#pictureInPictureChange);
+		if (VideoViewPlugin.#isApple) {
+			this.#dom.addEventListener('webkitpresentationmodechanged', e => {
+				if (this.#state > 0) {
+					this.#sendDisplayMode({
+						inline: 0,
+						fullscreen: 1,
+						'picture-in-picture': 2
+					}[this.#dom.webkitPresentationMode]);
+				}
+			});
+		} else {
+			if (document.fullscreenEnabled) {
+				addEventListener('fullscreenchange', this.#displayModeChange);
+			}
+			if (document.pictureInPictureEnabled) {
+				addEventListener('enterpictureinpicture', this.#displayModeChange);
+				addEventListener('leavepictureinpicture', this.#displayModeChange);
+			}
 		}
 		this.#dom.textTracks.addEventListener('change', () => {
 			if (this.#state > 1 && !this.#subtitleOnChange) {
@@ -838,33 +833,33 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#autoPlay = autoPlay;
 	}
 
-	/** @param {boolean} fullscreen */
-	setFullscreen(fullscreen) {
+	/** @param {0|1|2} mode */
+	setDisplayMode(mode) {
 		if (this.#state > 0) {
-			if (document.fullscreenEnabled) {
-				if (fullscreen) {
-					this.#dom.requestFullscreen();
-				} else if (document.fullscreenElement === this.#dom) {
+			if (VideoViewPlugin.#isApple) {
+				const type = ['inline', 'fullscreen', 'picture-in-picture'][mode];
+				if (this.#dom.webkitSupportsPresentationMode(type)) {
+					if (this.#dom.webkitPresentationMode !== type) {
+						this.#dom.webkitSetPresentationMode(type);
+					}
+					return true;
+				}
+			} else if (mode === 0) {
+				if (document.fullscreenElement === this.#dom) {
 					document.exitFullscreen();
+				} else if (document.pictureInPictureElement === this.#dom) {
+					document.exitPictureInPicture();
 				}
 				return true;
-			} else if (this.#dom.webkitSupportsFullscreen) {
-				this.#dom[fullscreen ? 'webkitEnterFullscreen' : 'webkitExitFullscreen']();
-				return true;
+			} else {
+				const type = mode === 1 ? 'fullscreen' : 'pictureInPicture';
+				if (document[type + 'Enabled']) {
+					if (document[type + 'Element'] !== this.#dom) {
+						this.#dom['request' + type[0].toUpperCase() + type.slice(1)]();
+					}
+					return true;
+				}
 			}
-		}
-		return false;
-	}
-
-	/** @param {boolean} pip */
-	setPictureInPicture(pip) {
-		if (this.#state > 0 && document.pictureInPictureEnabled) {
-			if (pip) {
-				this.#dom.requestPictureInPicture();
-			} else if (document.pictureInPictureElement === this.#dom) {
-				document.exitPictureInPicture();
-			}
-			return true;
 		}
 		return false;
 	}
@@ -908,11 +903,9 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	/** @param {boolean} show */
 	setShowSubtitle(show) {
 		this.#showSubtitle = show;
-		this.#setSubtitleTrack(show
-			? this.#overrideSubtitleTrack < 0
-				? this.#getDefaultTrack(2)
-				: this.#overrideSubtitleTrack
-			: -1);
+		this.#setSubtitleTrack(!show ? -1
+			: this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2)
+				: this.#overrideSubtitleTrack);
 	}
 
 	/** @param {string?} trackId */
@@ -940,7 +933,27 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		if (fit === 'scaleDown') {
 			fit = 'scale-down';
 		}
-		this.#dom.style.objectFit = fit;
+		if (fit === 'fitWidth' || fit === 'fitHeight') {
+			this.#fitWidth = fit === 'fitWidth';
+			if (!this.#observer) {
+				this.#observer = new ResizeObserver(entries => {
+					this.#dom.width = Math.round(entries[0].contentBoxSize[0].inlineSize * devicePixelRatio * visualViewport.scale);
+					this.#dom.height = Math.round(entries[0].contentBoxSize[0].blockSize * devicePixelRatio * visualViewport.scale);
+					this.#onresize();
+				});
+				this.#observer.observe(this.#dom);
+			} else if (this.#dom.width > 0 && this.#dom.height > 0) {
+				this.#onresize();
+			}
+		} else {
+			this.#dom.style.objectFit = fit;
+			if (this.#observer) {
+				this.#observer.unobserve(this.#dom);
+				this.#observer = null;
+				this.#dom.removeAttribute('width');
+				this.#dom.removeAttribute('height');
+			}
+		}
 	}
 
 	/** @param {number} color */
