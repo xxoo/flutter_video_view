@@ -52,7 +52,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
       }
     });
     _player.displayMode.addListener(
-      () => debugPrint('Display mode: ${_player.displayMode.value}'),
+      () => debugPrint('Display mode: ${_player.displayMode.value.name}'),
     );
   }
 
@@ -76,7 +76,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
               TextField(
                 controller: _inputController,
                 decoration: const InputDecoration(
-                  labelText: 'Open Media',
+                  labelText: 'Load Media',
                   hintText: 'Please input a media URL',
                 ),
                 keyboardType: TextInputType.url,

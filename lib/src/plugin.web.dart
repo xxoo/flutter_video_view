@@ -20,7 +20,7 @@ extension type VideoViewPlugin._(JSObject _) implements JSObject {
   static void registerWith(Registrar registrar) =>
       platformViewRegistry.registerViewFactory(
         'video_view',
-        (int viewId, {Object? params}) => _instances[params as int]!.dom,
+        (_, {Object? params}) => _instances[params as int]!.dom,
       );
 
   external VideoViewPlugin(JSFunction onmessage);

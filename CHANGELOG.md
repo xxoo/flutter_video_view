@@ -1,3 +1,6 @@
+## 1.1.1
+- fix a resource leak while disposing `VideoController`
+
 ## 1.1.0
 - **breaking change:** replace `fullscreen` and `pictureInPicture` with `displayMode` in `VideoController` class.
 - **breaking change:** replace `setFullscreen()` and `setPictureInPicture()` with `setDisplayMode()` in `VideoController` class.

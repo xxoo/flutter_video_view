@@ -157,6 +157,7 @@ class VideoController extends VideoControllerInterface {
       showSubtitle.dispose();
       overrideAudio.dispose();
       overrideSubtitle.dispose();
+      displayMode.dispose();
     }
   }
 
@@ -374,7 +375,7 @@ class VideoController extends VideoControllerInterface {
   /// This API is only available on web and should be considered as private.
   void setVideoFit(BoxFit fit) {
     if (!disposed) {
-      _plugin.setVideoFit(fit.toString().split('.').last);
+      _plugin.setVideoFit(fit.name);
     }
   }
 

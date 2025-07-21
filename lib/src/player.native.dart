@@ -207,6 +207,7 @@ class VideoController extends VideoControllerInterface {
       preferredAudioLanguage.dispose();
       preferredSubtitleLanguage.dispose();
       showSubtitle.dispose();
+      displayMode.dispose();
     }
   }
 

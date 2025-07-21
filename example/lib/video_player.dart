@@ -67,7 +67,7 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
       }
     });
     _player.displayMode.addListener(
-      () => debugPrint('Display mode: ${_player.displayMode.value}'),
+      () => debugPrint('Display mode: ${_player.displayMode.value.name}'),
     );
     _inputController.text =
         'https://dash.akamaized.net/akamai/test/caption_test/ElephantsDream/ElephantsDream_en.vtt';
@@ -143,7 +143,7 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
               TextField(
                 controller: _inputController,
                 decoration: const InputDecoration(
-                  labelText: 'Open Subtitle',
+                  labelText: 'Load Subtitle',
                   hintText: 'Please input a subtitle URL',
                 ),
                 keyboardType: TextInputType.url,
