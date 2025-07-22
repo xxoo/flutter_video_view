@@ -1,3 +1,6 @@
+## 1.1.2
+- fix a bug while triggering `displayMode` change event on Web platforms running in wasm mode. 
+
 ## 1.1.1
 - fix a resource leak while disposing `VideoController`
 

@@ -103,7 +103,8 @@ class VideoController extends VideoControllerInterface {
       } else if (eventName == 'volume') {
         volume.value = e['value'];
       } else if (eventName == 'displayMode') {
-        displayMode.value = VideoControllerDisplayMode.values[e['value']];
+        displayMode.value =
+            VideoControllerDisplayMode.values[(e['value'] as double).toInt()];
       } else if (eventName == 'showSubtitle') {
         showSubtitle.value = e['value'];
       } else if (eventName == 'overrideAudio') {
