@@ -95,17 +95,79 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		return type;
 	}
 
+	static void SafeEnqueue(DispatcherQueueHandler const& handler) {
+		if (dispatcherQueue) {
+			dispatcherQueue.TryEnqueue(handler);
+		} else {
+			// If no dispatcher queue is available, execute immediately on current thread
+			// This provides fallback behavior for older Windows versions
+			try {
+				handler();
+			} catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Exception in SafeEnqueue fallback execution\n");
+			}
+		}
+	}
+
+	static bool TryCreateDispatcherQueueController() {
+		// Dynamically load CoreMessaging.dll to check for CreateDispatcherQueueController availability
+		HMODULE hCoreMessaging = LoadLibraryW(L"CoreMessaging.dll");
+		if (!hCoreMessaging) {
+			OutputDebugStringW(L"VideoViewPlugin: CoreMessaging.dll not found\n");
+			return false;
+		}
+
+		// Define function pointer type for CreateDispatcherQueueController
+		typedef HRESULT(WINAPI* CreateDispatcherQueueControllerPtr)(
+			DispatcherQueueOptions options,
+			ABI::Windows::System::IDispatcherQueueController** dispatcherQueueController
+		);
+
+		// Try to get the function address
+		CreateDispatcherQueueControllerPtr createFunc = 
+			(CreateDispatcherQueueControllerPtr)GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
+		
+		if (!createFunc) {
+			OutputDebugStringW(L"VideoViewPlugin: CreateDispatcherQueueController not available in CoreMessaging.dll\n");
+			FreeLibrary(hCoreMessaging);
+			return false;
+		}
+
+		// Function exists, try to create the dispatcher queue controller
+		try {
+			HRESULT hr = createFunc(
+				DispatcherQueueOptions{
+					sizeof(DispatcherQueueOptions),
+					DQTYPE_THREAD_CURRENT,
+					DQTAT_COM_NONE
+				},
+				//PDISPATCHERQUEUECONTROLLER could be missing in some case, so we use the original type instead
+				reinterpret_cast<ABI::Windows::System::IDispatcherQueueController**>(put_abi(dispatcherController))
+			);
+			
+			FreeLibrary(hCoreMessaging);
+			
+			if (SUCCEEDED(hr)) {
+				dispatcherQueue = dispatcherController.DispatcherQueue();
+				OutputDebugStringW(L"VideoViewPlugin: DispatcherQueueController created successfully\n");
+				return true;
+			} else {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to create DispatcherQueueController\n");
+				return false;
+			}
+		} catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: Exception while creating DispatcherQueueController\n");
+			FreeLibrary(hCoreMessaging);
+			return false;
+		}
+	}
+
 	static void createDispatcherQueue() {
-		check_hresult(CreateDispatcherQueueController(
-			DispatcherQueueOptions{
-				sizeof(DispatcherQueueOptions),
-				DQTYPE_THREAD_CURRENT,
-				DQTAT_COM_NONE
-			},
-			//PDISPATCHERQUEUECONTROLLER could be missing in some case, so we use the original type instead
-			reinterpret_cast<ABI::Windows::System::IDispatcherQueueController**>(put_abi(dispatcherController))
-		));
-		dispatcherQueue = dispatcherController.DispatcherQueue();
+		if (!TryCreateDispatcherQueueController()) {
+			OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController (older Windows version)\n");
+			// On older Windows versions, we'll proceed without the dispatcher queue controller
+			// The plugin should still work for basic functionality
+		}
 	}
 
 	static TextureVariant* createTextureVariant(weak_ptr<VideoController> weakThis, const bool isSubtitle) {
@@ -539,7 +601,7 @@ public:
 		auto playbackSession = mediaPlayer.PlaybackSession();
 
 		playbackSession.NaturalVideoSizeChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 0) {
 					sharedThis->textureBuffer.width = sharedThis->subTextureBuffer.width = playbackSession.NaturalVideoWidth();
@@ -556,7 +618,7 @@ public:
 		});
 
 		playbackSession.PositionChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 1) {
 					sharedThis->setPosition();
@@ -565,7 +627,7 @@ public:
 		});
 
 		playbackSession.SeekCompleted([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->eventSink) {
 					if (sharedThis->state == 1) {
@@ -580,7 +642,7 @@ public:
 		});
 
 		playbackSession.BufferingStarted([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
 					sharedThis->eventSink->Success(EncodableMap{
@@ -592,7 +654,7 @@ public:
 		});
 
 		playbackSession.BufferingEnded([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
 					sharedThis->eventSink->Success(EncodableMap{
@@ -604,7 +666,7 @@ public:
 		});
 
 		playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !sharedThis->mediaPlayer.RealTimePlayback()) {
 					auto buffered = playbackSession.GetBufferedRanges();
@@ -636,7 +698,7 @@ public:
 		});
 
 		mediaPlayer.MediaFailed([weakThis](auto, MediaPlayerFailedEventArgs const& reason) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, reason]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis, reason]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 0) {
 					sharedThis->close();
@@ -668,7 +730,7 @@ public:
 				auto live = playbackSession.NaturalDuration().count() == INT64_MAX;
 				sharedThis->mediaPlayer.RealTimePlayback(live);
 				if (live) {
-					dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
+					SafeEnqueue(DispatcherQueueHandler([weakThis]() {
 						auto sharedThis = weakThis.lock();
 						if (sharedThis) {
 							sharedThis->loadEnd();
@@ -682,7 +744,7 @@ public:
 		});
 
 		mediaPlayer.MediaEnded([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
+			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 2) {
 					if (sharedThis->mediaPlayer.RealTimePlayback()) {
