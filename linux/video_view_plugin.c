@@ -37,6 +37,7 @@ typedef struct {
 	uint16_t maxHeight;
 	uint16_t overrideAudio; // 0 for auto otherwise track id
 	uint16_t overrideSubtitle;
+	uint16_t init_display_retries;
 	bool looping;
 	bool streaming;
 	bool networking;
@@ -524,11 +525,6 @@ static void video_controller_overrideTrack(VideoController* self, const uint8_t 
 	}
 }
 
-static void* video_controller_gl_init(void* addrCtx, const char* name) {
-	void* (*func)(const char*) = addrCtx;
-	return func ? func(name) : NULL;
-}
-
 static gboolean video_controller_event_callback(void* id) {
 	VideoController* self = g_tree_lookup(plugin->players, id);
 	while (self) {
@@ -679,6 +675,42 @@ static gboolean video_controller_texture_populate(FlTextureGL* texture, uint32_t
 	return FALSE;
 }
 
+static void* video_controller_gl_init(void* addrCtx, const char* name) {
+	void* (*func)(const char*) = addrCtx;
+	return func(name);
+}
+
+static gboolean video_controller_context_init(void* id) {
+	VideoController* self = g_tree_lookup(plugin->players, id);
+	if (self) {
+		GdkDisplay* display = gdk_display_get_default();
+		if (display) {
+			void* func = NULL;
+			if (GDK_IS_WAYLAND_DISPLAY(display)) {
+				func = eglGetProcAddress;
+			} else if (GDK_IS_X11_DISPLAY(display)) {
+				func = glXGetProcAddressARB;
+			}
+			if (func) {
+				mpv_opengl_init_params gl_init_params = { video_controller_gl_init, func };
+				mpv_render_param params[] = {
+					{ MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_OPENGL },
+					{ MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params },
+					{ MPV_RENDER_PARAM_INVALID, NULL }
+				};
+				int res = mpv_render_context_create(&self->mpvRenderContext, self->mpv, params);
+				if (res == MPV_ERROR_SUCCESS) {
+					mpv_render_context_set_update_callback(self->mpvRenderContext, video_controller_texture_update_callback, (void*)self->id);
+				} else if (res == MPV_ERROR_UNSUPPORTED && self->init_display_retries < 4095) {
+					self->init_display_retries++;
+					return TRUE;
+				}
+			}
+		}
+	}
+	return FALSE;
+}
+
 static void video_controller_class_init(VideoControllerClass* klass) {
 	FL_TEXTURE_GL_CLASS(klass)->populate = video_controller_texture_populate;
 }
@@ -696,6 +728,7 @@ static void video_controller_init(VideoController* self) {
 	self->preferredAudioLanguage = NULL;
 	self->preferredSubtitleLanguage = NULL;
 	self->looping = self->streaming = self->networking = self->seeking = false;
+	self->init_display_retries = 0;
 	//self->mpvRenderContext = NULL;
 }
 
@@ -730,22 +763,8 @@ static VideoController* video_controller_new(FlMethodCodec* codec, FlBinaryMesse
 	mpv_observe_property(self->mpv, 0, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
 	mpv_observe_property(self->mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
 	mpv_observe_property(self->mpv, 0, "pause", MPV_FORMAT_FLAG);
-	GdkDisplay* display = gdk_display_get_default();
-	void* func = NULL;
-	if (GDK_IS_WAYLAND_DISPLAY(display)) {
-		func = eglGetProcAddress;
-	} else if (GDK_IS_X11_DISPLAY(display)) {
-		func = glXGetProcAddressARB;
-	}
-	mpv_opengl_init_params gl_init_params = { video_controller_gl_init, func };
-	mpv_render_param params[] = {
-		{ MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_OPENGL },
-		{ MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params },
-		{ MPV_RENDER_PARAM_INVALID, NULL }
-	};
-	mpv_render_context_create(&self->mpvRenderContext, self->mpv, params);
-	mpv_render_context_set_update_callback(self->mpvRenderContext, video_controller_texture_update_callback, (void*)self->id);
 	mpv_set_wakeup_callback(self->mpv, video_controller_wakeup_callback, (void*)self->id);
+	g_idle_add(video_controller_context_init, (void*)self->id);
 	return self;
 }
 

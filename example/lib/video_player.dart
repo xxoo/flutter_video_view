@@ -204,11 +204,16 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.play_arrow),
-                    onPressed: () => _player.play(),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.pause),
-                    onPressed: () => _player.pause(),
+                    isSelected:
+                        _player.playbackState.value ==
+                        VideoControllerPlaybackState.playing,
+                    selectedIcon: const Icon(Icons.pause),
+                    onPressed:
+                        () =>
+                            _player.playbackState.value ==
+                                    VideoControllerPlaybackState.playing
+                                ? _player.pause()
+                                : _player.play(),
                   ),
                   IconButton(
                     icon: const Icon(Icons.stop),
@@ -242,7 +247,10 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                       icon: const Icon(Icons.picture_in_picture),
                       onPressed:
                           () => _player.setDisplayMode(
-                            VideoControllerDisplayMode.pictureInPicture,
+                            _player.displayMode.value ==
+                                    VideoControllerDisplayMode.pictureInPicture
+                                ? VideoControllerDisplayMode.normal
+                                : VideoControllerDisplayMode.pictureInPicture,
                           ),
                     ),
                     IconButton(

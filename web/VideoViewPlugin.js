@@ -4,6 +4,32 @@
  * Copyright 2025 Xiao Shen.
  * Licensed under BSD 2-Clause.
  */
+class Enum {
+	/** @param {string} name */
+	constructor(name) {
+		if (!new.target || Object.isFrozen(new.target) || !(this instanceof Enum)) {
+			throw Error('not allowed');
+		} else if (typeof name !== 'string' || name.trim() === '' || /[a-z]/.test(name)) {
+			throw Error('bad name');
+		}
+		this.name = name;
+		Object.freeze(this);
+	}
+	toString() {
+		return `${this.constructor.name}.${this.name}`;
+	}
+}
+Object.freeze(Enum.prototype);
+Object.freeze(Enum);
+class DisplayMode extends Enum {
+	static NORMAL = new DisplayMode('NORMAL');
+	static FULLSCREEN = new DisplayMode('FULLSCREEN');
+	static PICTURE_IN_PICTURE = new DisplayMode('PICTURE_IN_PICTURE');
+}
+Object.freeze(DisplayMode.prototype);
+Object.freeze(DisplayMode);
+DisplayMode.NORMAL.name;
+
 globalThis.VideoViewPlugin = class VideoViewPlugin {
 	static #isApple = navigator.vendor.startsWith('Apple');
 

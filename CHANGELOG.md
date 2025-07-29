@@ -1,3 +1,7 @@
+## 1.1.3
+- fix a bug may lead to crash when failed to initialize gl context on Linux.
+- automatically retry when failed to initialize gl context on Linux for at most 4095 times.
+
 ## 1.1.2
 - fix a bug while triggering `displayMode` change event on Web platforms running in wasm mode. 
 
