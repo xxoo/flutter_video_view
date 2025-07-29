@@ -13,6 +13,8 @@
 #include <winrt/Windows.System.UserProfile.h>
 #include <DispatcherQueue.h>
 #include <mutex>
+#include <combaseapi.h>
+#include <wrl/client.h>
 
 #undef max //we want to use std::max
 
@@ -24,12 +26,20 @@ using namespace winrt::Windows::System::UserProfile;
 using namespace winrt::Windows::Media::Core;
 using namespace winrt::Windows::Media::Playback;
 using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
+using namespace Microsoft::WRL;
+
+// Function pointer typedef for CreateDispatcherQueueController
+typedef HRESULT(WINAPI* CreateDispatcherQueueControllerFunc)(
+	DispatcherQueueOptions options,
+	ABI::Windows::System::IDispatcherQueueController** dispatcherQueueController
+);
 
 class VideoController : public enable_shared_from_this<VideoController> {
 	static ID3D11Device* d3dDevice;
 	static ID3D11DeviceContext* d3dContext;
-	static DispatcherQueueController dispatcherController;
+	static ComPtr<ABI::Windows::System::IDispatcherQueueController> dispatcherController;
 	static DispatcherQueue dispatcherQueue;
+	static bool comInitialized;
 
 	static char lower(const char c) {
 		return c >= 'A' && c <= 'Z' ? c + 32 : c;
@@ -110,63 +120,85 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	static bool TryCreateDispatcherQueueController() {
-		// Dynamically load CoreMessaging.dll to check for CreateDispatcherQueueController availability
+		OutputDebugStringW(L"VideoViewPlugin: Attempting to create DispatcherQueueController\n");
+		
+		// Initialize COM if not already done
+		if (!comInitialized) {
+			HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+			if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
+				comInitialized = true;
+				OutputDebugStringW(L"VideoViewPlugin: COM initialized successfully\n");
+			} else {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to initialize COM\n");
+				return false;
+			}
+		}
+
+		// Dynamically load CoreMessaging.dll
 		HMODULE hCoreMessaging = LoadLibraryW(L"CoreMessaging.dll");
 		if (!hCoreMessaging) {
-			OutputDebugStringW(L"VideoViewPlugin: CoreMessaging.dll not found\n");
+			OutputDebugStringW(L"VideoViewPlugin: CoreMessaging.dll not found - running on older Windows version\n");
 			return false;
 		}
 
-		// Define function pointer type for CreateDispatcherQueueController
-		typedef HRESULT(WINAPI* CreateDispatcherQueueControllerPtr)(
-			DispatcherQueueOptions options,
-			ABI::Windows::System::IDispatcherQueueController** dispatcherQueueController
-		);
-
-		// Try to get the function address
-		CreateDispatcherQueueControllerPtr createFunc = 
-			(CreateDispatcherQueueControllerPtr)GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
+		// Get function pointer for CreateDispatcherQueueController
+		CreateDispatcherQueueControllerFunc createFunc = 
+			(CreateDispatcherQueueControllerFunc)GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
 		
 		if (!createFunc) {
-			OutputDebugStringW(L"VideoViewPlugin: CreateDispatcherQueueController not available in CoreMessaging.dll\n");
+			OutputDebugStringW(L"VideoViewPlugin: CreateDispatcherQueueController function not available\n");
 			FreeLibrary(hCoreMessaging);
 			return false;
 		}
 
-		// Function exists, try to create the dispatcher queue controller
+		// Try to create the dispatcher queue controller
 		try {
-			HRESULT hr = createFunc(
-				DispatcherQueueOptions{
-					sizeof(DispatcherQueueOptions),
-					DQTYPE_THREAD_CURRENT,
-					DQTAT_COM_NONE
-				},
-				//PDISPATCHERQUEUECONTROLLER could be missing in some case, so we use the original type instead
-				reinterpret_cast<ABI::Windows::System::IDispatcherQueueController**>(put_abi(dispatcherController))
-			);
+			DispatcherQueueOptions options{
+				sizeof(DispatcherQueueOptions),
+				DQTYPE_THREAD_CURRENT,
+				DQTAT_COM_NONE
+			};
+
+			HRESULT hr = createFunc(options, &dispatcherController);
 			
 			FreeLibrary(hCoreMessaging);
 			
-			if (SUCCEEDED(hr)) {
-				dispatcherQueue = dispatcherController.DispatcherQueue();
-				OutputDebugStringW(L"VideoViewPlugin: DispatcherQueueController created successfully\n");
-				return true;
+			if (SUCCEEDED(hr) && dispatcherController) {
+				// Get the DispatcherQueue from the controller using WinRT wrapper
+				try {
+					// Create WinRT wrapper from ABI interface
+					winrt::Windows::System::DispatcherQueueController controller;
+					winrt::copy_from_abi(controller, dispatcherController.Get());
+					dispatcherQueue = controller.DispatcherQueue();
+					OutputDebugStringW(L"VideoViewPlugin: DispatcherQueueController created successfully\n");
+					return true;
+				} catch (...) {
+					OutputDebugStringW(L"VideoViewPlugin: Failed to get DispatcherQueue from controller\n");
+				}
 			} else {
 				OutputDebugStringW(L"VideoViewPlugin: Failed to create DispatcherQueueController\n");
-				return false;
 			}
 		} catch (...) {
 			OutputDebugStringW(L"VideoViewPlugin: Exception while creating DispatcherQueueController\n");
 			FreeLibrary(hCoreMessaging);
-			return false;
 		}
+		
+		return false;
 	}
 
 	static void createDispatcherQueue() {
+		// First try to get existing dispatcher queue for current thread
+		dispatcherQueue = DispatcherQueue::GetForCurrentThread();
+		if (dispatcherQueue) {
+			OutputDebugStringW(L"VideoViewPlugin: Using existing DispatcherQueue for current thread\n");
+			return;
+		}
+
+		// If no existing queue, try to create one
 		if (!TryCreateDispatcherQueueController()) {
-			OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController (older Windows version)\n");
-			// On older Windows versions, we'll proceed without the dispatcher queue controller
-			// The plugin should still work for basic functionality
+			OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController (older Windows version or error)\n");
+			// On older Windows versions or when creation fails, we'll proceed without the dispatcher queue
+			// The SafeEnqueue function will handle execution on the current thread as fallback
 		}
 	}
 
@@ -377,7 +409,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 
 	int16_t getDefaultTrack(const MediaTrackKind kind) {
 		if (kind == MediaTrackKind::Video) {
-			return getDefaultAudioTrack(preferredAudioLanguage);
+			return getDefaultVideoTrack(); // Fix: call getDefaultVideoTrack, not getDefaultAudioTrack
 		} else {
 			int16_t index = -1;
 			auto isSubtitle = kind == MediaTrackKind::TimedMetadata;
@@ -494,18 +526,21 @@ class VideoController : public enable_shared_from_this<VideoController> {
 
 public:
 	static void initGlobal() {
-		//init_apartment(apartment_type::single_threaded);
-		dispatcherQueue = DispatcherQueue::GetForCurrentThread();
-		if (dispatcherQueue) {
-			dispatcherQueue.ShutdownStarting([](auto, DispatcherQueueShutdownStartingEventArgs args) {
-				args.GetDeferral().Complete();
-				createDispatcherQueue();
-			});
-		} else {
-			createDispatcherQueue();
+		OutputDebugStringW(L"VideoViewPlugin: Initializing global resources\n");
+		
+		// Initialize COM first
+		HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+		if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
+			comInitialized = true;
+			OutputDebugStringW(L"VideoViewPlugin: COM initialized in initGlobal\n");
 		}
+
+		// Try to create or get dispatcher queue
+		createDispatcherQueue();
+
+		// Initialize D3D11 device
 		D3D_FEATURE_LEVEL featureLevel{};
-		check_hresult(D3D11CreateDevice(
+		hr = D3D11CreateDevice(
 			nullptr,
 			D3D_DRIVER_TYPE_HARDWARE,
 			nullptr,
@@ -516,20 +551,53 @@ public:
 			&d3dDevice,
 			&featureLevel,
 			&d3dContext
-		));
+		);
+		
+		if (SUCCEEDED(hr)) {
+			OutputDebugStringW(L"VideoViewPlugin: D3D11 device created successfully\n");
+		} else {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to create D3D11 device\n");
+		}
 	}
 
 	static void uninitGlobal() {
+		OutputDebugStringW(L"VideoViewPlugin: Cleaning up global resources\n");
+		
+		// Clean up D3D11 resources
 		if (d3dDevice) {
 			d3dDevice->Release();
+			d3dDevice = nullptr;
+		}
+		if (d3dContext) {
 			d3dContext->Release();
+			d3dContext = nullptr;
 		}
+		
+		// Clean up dispatcher queue controller
 		if (dispatcherController) {
-			dispatcherController.ShutdownQueueAsync();
-			dispatcherController = nullptr;
+			// Try to shutdown the queue gracefully
+			try {
+				ComPtr<ABI::Windows::System::IDispatcherQueue> queue;
+				if (SUCCEEDED(dispatcherController->get_DispatcherQueue(&queue))) {
+					// Note: IDispatcherQueue doesn't have a direct shutdown method in the ABI
+					// The controller will handle cleanup when released
+				}
+			} catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Exception during dispatcher queue cleanup\n");
+			}
+			dispatcherController.Reset();
 		}
+		
 		dispatcherQueue = nullptr;
-		//uninit_apartment();
+		
+		// Uninitialize COM if we initialized it
+		if (comInitialized) {
+			CoUninitialize();
+			comInitialized = false;
+			OutputDebugStringW(L"VideoViewPlugin: COM uninitialized\n");
+		}
+		
+		OutputDebugStringW(L"VideoViewPlugin: Global cleanup completed\n");
 	}
 
 	int64_t textureId = 0;
@@ -938,8 +1006,9 @@ public:
 };
 ID3D11DeviceContext* VideoController::d3dContext = nullptr;
 ID3D11Device* VideoController::d3dDevice = nullptr;
-DispatcherQueueController VideoController::dispatcherController{ nullptr };
+ComPtr<ABI::Windows::System::IDispatcherQueueController> VideoController::dispatcherController;
 DispatcherQueue VideoController::dispatcherQueue{ nullptr };
+bool VideoController::comInitialized = false;
 
 class VideoViewPlugin : public Plugin {
 	MethodChannel<EncodableValue>* methodChannel;
