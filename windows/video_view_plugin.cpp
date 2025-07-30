@@ -167,7 +167,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				// Get the DispatcherQueue from the controller using WinRT wrapper
 				try {
 					// Create WinRT wrapper from ABI interface
-					winrt::Windows::System::DispatcherQueueController controller;
+					winrt::Windows::System::DispatcherQueueController controller{ nullptr };
 					winrt::copy_from_abi(controller, dispatcherController.Get());
 					dispatcherQueue = controller.DispatcherQueue();
 					OutputDebugStringW(L"VideoViewPlugin: DispatcherQueueController created successfully\n");
