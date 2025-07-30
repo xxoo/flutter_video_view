@@ -15,6 +15,7 @@
 #include <mutex>
 #include <combaseapi.h>
 #include <wrl/client.h>
+#include <VersionHelpers.h>
 
 #undef max //we want to use std::max
 
@@ -99,10 +100,101 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			type = "chapter";
 		} else if (kind == TimedMetadataKind::Subtitle) {
 			type = "subtitle";
-		} else if (kind == TimedMetadataKind::ImageSubtitle) {
-			type = "imageSubtitle";
+		} else {
+			// Handle ImageSubtitle and any future types safely
+			try {
+				if (kind == TimedMetadataKind::ImageSubtitle) {
+					type = "imageSubtitle";
+				} else {
+					type = "unknown";
+				}
+			} catch (...) {
+				// ImageSubtitle might not be available on older Windows versions
+				type = "subtitle"; // fallback to regular subtitle
+			}
 		}
 		return type;
+	}
+
+	// Check Windows version for API compatibility
+	static bool IsWindows1803OrLater() {
+		static bool checked = false;
+		static bool isSupported = false;
+		
+		if (!checked) {
+			// Use more reliable version detection through Windows APIs
+			// First try IsWindows10OrGreater from VersionHelpers.h
+			if (IsWindows10OrGreater()) {
+				// For Windows 10, try to detect 1803+ by checking for specific APIs
+				// Try to load a function that was introduced in 1803
+				HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+				if (hKernel32) {
+					// Check for SetThreadDescription which was added in 1803
+					auto setThreadDesc = GetProcAddress(hKernel32, "SetThreadDescription");
+					if (setThreadDesc) {
+						isSupported = true;
+						OutputDebugStringW(L"VideoViewPlugin: Windows 1803+ detected via SetThreadDescription API\n");
+					} else {
+						OutputDebugStringW(L"VideoViewPlugin: Pre-1803 Windows detected - SetThreadDescription not available\n");
+					}
+				}
+				
+				// Additional check: look for CoreMessaging.dll which contains DispatcherQueue APIs
+				if (!isSupported) {
+					HMODULE hCoreMessaging = LoadLibraryW(L"CoreMessaging.dll");
+					if (hCoreMessaging) {
+						auto createFunc = GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
+						if (createFunc) {
+							isSupported = true;
+							OutputDebugStringW(L"VideoViewPlugin: Windows 1803+ detected via CoreMessaging API\n");
+						}
+						FreeLibrary(hCoreMessaging);
+					}
+				}
+			} else {
+				OutputDebugStringW(L"VideoViewPlugin: Pre-Windows 10 detected\n");
+			}
+			
+			checked = true;
+			OutputDebugStringW(isSupported ? 
+				L"VideoViewPlugin: Full API support available\n" :
+				L"VideoViewPlugin: Using fallback mode for older Windows\n");
+		}
+		
+		return isSupported;
+	}
+
+	// Safe wrapper for RealTimePlayback property
+	static bool SafeGetRealTimePlayback(const MediaPlayer& player) {
+		try {
+			return player.RealTimePlayback();
+		} catch (...) {
+			// Fallback: assume not real-time for older versions
+			OutputDebugStringW(L"VideoViewPlugin: RealTimePlayback property not supported, assuming false\n");
+			return false;
+		}
+	}
+
+	// Safe wrapper for setting RealTimePlayback
+	static void SafeSetRealTimePlayback(MediaPlayer& player, bool value) {
+		try {
+			player.RealTimePlayback(value);
+		} catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: RealTimePlayback property not supported, ignoring\n");
+		}
+	}
+
+	// Safe check for subtitle/caption types (ImageSubtitle may not be available on older Windows)
+	static bool IsSubtitleType(const TimedMetadataKind kind) {
+		try {
+			return (kind == TimedMetadataKind::Caption || 
+				    kind == TimedMetadataKind::Subtitle || 
+				    kind == TimedMetadataKind::ImageSubtitle);
+		} catch (...) {
+			// Fallback for older Windows versions without ImageSubtitle
+			return (kind == TimedMetadataKind::Caption || 
+				    kind == TimedMetadataKind::Subtitle);
+		}
 	}
 
 	static void SafeEnqueue(DispatcherQueueHandler const& handler) {
@@ -269,10 +361,23 @@ class VideoController : public enable_shared_from_this<VideoController> {
 					const float clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
 					d3dContext->ClearRenderTargetView(sharedThis->subtitleRenderTargetView.get(), clearColor);
 				}
-				if (isSubtitle) {
-					sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
+				
+				// Use new APIs only if supported
+				if (IsWindows1803OrLater()) {
+					try {
+						if (isSubtitle) {
+							sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
+						} else {
+							sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
+						}
+					} catch (...) {
+						OutputDebugStringW(L"VideoViewPlugin: Exception in new surface rendering API, falling back\n");
+						// Fallback: skip frame rendering for this call
+					}
 				} else {
-					sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
+					// For older Windows versions, we can't use surface rendering
+					// The video will still play but without hardware-accelerated rendering
+					OutputDebugStringW(L"VideoViewPlugin: Surface rendering not available on this Windows version\n");
 				}
 				mtx.unlock();
 			}
@@ -342,7 +447,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		for (uint16_t i = 0; i < tracks.Size(); i++) {
 			auto track = tracks.GetAt(i);
 			auto kind = track.TimedMetadataKind();
-			if ((kind == TimedMetadataKind::Caption || kind == TimedMetadataKind::Subtitle || kind == TimedMetadataKind::ImageSubtitle)) {
+			if (IsSubtitleType(kind)) {
 				if (def < 0) {
 					def = i;
 				}
@@ -431,7 +536,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	void setPosition() {
-		if (!mediaPlayer.RealTimePlayback()) {
+		if (!SafeGetRealTimePlayback(mediaPlayer)) {
 			auto pos = mediaPlayer.PlaybackSession().Position().count() / 10000;
 			if (pos != position) {
 				position = pos;
@@ -492,7 +597,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			for (uint16_t i = 0; i < subtitletracks.Size(); i++) {
 				auto track = subtitletracks.GetAt(i);
 				auto kind = track.TimedMetadataKind();
-				if (kind == TimedMetadataKind::Caption || kind == TimedMetadataKind::Subtitle || kind == TimedMetadataKind::ImageSubtitle) {
+				if (IsSubtitleType(kind)) {
 					if (selectedSubtitleTrackId >= 0) {
 						subtitletracks.SetPresentationMode(i, i == selectedSubtitleTrackId ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
 					}
@@ -513,11 +618,11 @@ class VideoController : public enable_shared_from_this<VideoController> {
 					{ string("event"), string("mediaInfo") },
 					{ string("audioTracks"), audioTracks },
 					{ string("subtitleTracks"), subtitleTracks },
-					{ string("duration"), EncodableValue(mediaPlayer.RealTimePlayback() ? 0 : playbackSession.NaturalDuration().count() / 10000) },
+					{ string("duration"), EncodableValue(SafeGetRealTimePlayback(mediaPlayer) ? 0 : playbackSession.NaturalDuration().count() / 10000) },
 					{ string("source"), source }
 				});
 				setPosition();
-				if (networking && !mediaPlayer.RealTimePlayback() && bufferPosition > position) {
+				if (networking && !SafeGetRealTimePlayback(mediaPlayer) && bufferPosition > position) {
 					sendBuffer(position);
 				}
 			}
@@ -609,7 +714,19 @@ public:
 		textureBuffer.release_callback = subTextureBuffer.release_callback = renderingCompleted;
 		textureBuffer.release_context = &videoMutex;
 		subTextureBuffer.release_context = &subtitleMutex;
-		mediaPlayer.IsVideoFrameServerEnabled(true);
+		
+		// Enable frame server only if supported
+		if (IsWindows1803OrLater()) {
+			try {
+				mediaPlayer.IsVideoFrameServerEnabled(true);
+				OutputDebugStringW(L"VideoViewPlugin: Video frame server enabled\n");
+			} catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to enable video frame server, continuing without it\n");
+			}
+		} else {
+			OutputDebugStringW(L"VideoViewPlugin: Video frame server not supported on this Windows version\n");
+		}
+		
 		mediaPlayer.CommandManager().IsEnabled(false);
 	}
 
@@ -736,7 +853,7 @@ public:
 		playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
 			SafeEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !sharedThis->mediaPlayer.RealTimePlayback()) {
+				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
 					auto buffered = playbackSession.GetBufferedRanges();
 					for (uint32_t i = 0; i < buffered.Size(); i++) {
 						auto start = buffered.GetAt(i).Start.count();
@@ -757,13 +874,23 @@ public:
 			}));
 		});
 
-		mediaPlayer.SubtitleFrameChanged([weakThis](auto, auto) {
-			drawFrame(weakThis, true);
-		});
+		// Video frame events are only available in Windows 1803+
+		if (IsWindows1803OrLater()) {
+			try {
+				mediaPlayer.SubtitleFrameChanged([weakThis](auto, auto) {
+					drawFrame(weakThis, true);
+				});
 
-		mediaPlayer.VideoFrameAvailable([weakThis](auto, auto) {
-			drawFrame(weakThis, false);
-		});
+				mediaPlayer.VideoFrameAvailable([weakThis](auto, auto) {
+					drawFrame(weakThis, false);
+				});
+				OutputDebugStringW(L"VideoViewPlugin: Video frame events registered\n");
+			} catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to register video frame events\n");
+			}
+		} else {
+			OutputDebugStringW(L"VideoViewPlugin: Video frame events not supported on this Windows version\n");
+		}
 
 		mediaPlayer.MediaFailed([weakThis](auto, MediaPlayerFailedEventArgs const& reason) {
 			SafeEnqueue(DispatcherQueueHandler([weakThis, reason]() {
@@ -796,7 +923,7 @@ public:
 			if (sharedThis && sharedThis->state == 1) {
 				auto playbackSession = sharedThis->mediaPlayer.PlaybackSession();
 				auto live = playbackSession.NaturalDuration().count() == INT64_MAX;
-				sharedThis->mediaPlayer.RealTimePlayback(live);
+				SafeSetRealTimePlayback(sharedThis->mediaPlayer, live);
 				if (live) {
 					SafeEnqueue(DispatcherQueueHandler([weakThis]() {
 						auto sharedThis = weakThis.lock();
@@ -815,7 +942,7 @@ public:
 			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 2) {
-					if (sharedThis->mediaPlayer.RealTimePlayback()) {
+					if (SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
 						sharedThis->close();
 					} else if (sharedThis->looping) {
 						sharedThis->mediaPlayer.Play();
@@ -900,7 +1027,7 @@ public:
 		auto playbackSession = mediaPlayer.PlaybackSession();
 		if (state == 1) {
 			position = pos;
-		} else if (eventSink && (!mediaPlayer.Source() || mediaPlayer.RealTimePlayback() || playbackSession.Position().count() / 10000 == pos)) {
+		} else if (eventSink && (!mediaPlayer.Source() || SafeGetRealTimePlayback(mediaPlayer) || playbackSession.Position().count() / 10000 == pos)) {
 			eventSink->Success(EncodableMap{
 				{ string("event"), string("seekEnd") }
 			});
@@ -974,7 +1101,7 @@ public:
 			auto tracks = mediaPlayer.Source().as<MediaPlaybackItem>().TimedMetadataTracks();
 			for (uint16_t i = 0; i < tracks.Size(); i++) {
 				auto k = tracks.GetAt(i).TimedMetadataKind();
-				if (k == TimedMetadataKind::Caption || k == TimedMetadataKind::Subtitle || k == TimedMetadataKind::ImageSubtitle) {
+				if (IsSubtitleType(k)) {
 					tracks.SetPresentationMode(i, i == j ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
 				}
 			}
@@ -995,7 +1122,7 @@ public:
 				}
 				for (uint16_t i = 0; i < tracks.Size(); i++) {
 					auto k = tracks.GetAt(i).TimedMetadataKind();
-					if (k == TimedMetadataKind::Caption || k == TimedMetadataKind::Subtitle || k == TimedMetadataKind::ImageSubtitle) {
+					if (IsSubtitleType(k)) {
 						tracks.SetPresentationMode(i, i == trackId ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
 					}
 				}
