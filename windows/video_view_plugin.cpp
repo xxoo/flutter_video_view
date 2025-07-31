@@ -101,16 +101,13 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		} else if (kind == TimedMetadataKind::Subtitle) {
 			type = "subtitle";
 		} else {
-			// Handle ImageSubtitle and any future types safely
-			try {
-				if (kind == TimedMetadataKind::ImageSubtitle) {
-					type = "imageSubtitle";
-				} else {
-					type = "unknown";
-				}
-			} catch (...) {
-				// ImageSubtitle might not be available on older Windows versions
-				type = "subtitle"; // fallback to regular subtitle
+			// ImageSubtitle was added in Windows 10 version 1809
+			// We need to check the actual enum value
+			// ImageSubtitle = 7 in the Windows SDK
+			if (static_cast<int>(kind) == 7) {
+				type = "imageSubtitle";
+			} else {
+				type = "unknown";
 			}
 		}
 		return type;
@@ -186,20 +183,34 @@ class VideoController : public enable_shared_from_this<VideoController> {
 
 	// Safe check for subtitle/caption types (ImageSubtitle may not be available on older Windows)
 	static bool IsSubtitleType(const TimedMetadataKind kind) {
-		try {
-			return (kind == TimedMetadataKind::Caption || 
-				    kind == TimedMetadataKind::Subtitle || 
-				    kind == TimedMetadataKind::ImageSubtitle);
-		} catch (...) {
-			// Fallback for older Windows versions without ImageSubtitle
-			return (kind == TimedMetadataKind::Caption || 
-				    kind == TimedMetadataKind::Subtitle);
+		// Check for known subtitle types
+		if (kind == TimedMetadataKind::Caption || 
+		    kind == TimedMetadataKind::Subtitle) {
+			return true;
 		}
+		
+		// ImageSubtitle = 7 in Windows SDK (added in 1809)
+		// Check by value instead of enum name to avoid compilation issues
+		if (static_cast<int>(kind) == 7) {
+			return true;
+		}
+		
+		return false;
 	}
 
 	static void SafeEnqueue(DispatcherQueueHandler const& handler) {
 		if (dispatcherQueue) {
-			dispatcherQueue.TryEnqueue(handler);
+			__try {
+				dispatcherQueue.TryEnqueue(handler);
+			}
+			__except(EXCEPTION_EXECUTE_HANDLER) {
+				// If TryEnqueue fails, execute immediately
+				try {
+					handler();
+				} catch (...) {
+					OutputDebugStringW(L"VideoViewPlugin: Exception in SafeEnqueue handler execution\n");
+				}
+			}
 		} else {
 			// If no dispatcher queue is available, execute immediately on current thread
 			// This provides fallback behavior for older Windows versions
@@ -244,52 +255,69 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		}
 
 		// Try to create the dispatcher queue controller
-		try {
-			DispatcherQueueOptions options{
-				sizeof(DispatcherQueueOptions),
-				DQTYPE_THREAD_CURRENT,
-				DQTAT_COM_NONE
-			};
+		DispatcherQueueOptions options{
+			sizeof(DispatcherQueueOptions),
+			DQTYPE_THREAD_CURRENT,
+			DQTAT_COM_NONE
+		};
 
-			HRESULT hr = createFunc(options, &dispatcherController);
-			
-			FreeLibrary(hCoreMessaging);
-			
-			if (SUCCEEDED(hr) && dispatcherController) {
-				// Get the DispatcherQueue from the controller using WinRT wrapper
-				try {
+		HRESULT hr = createFunc(options, &dispatcherController);
+		
+		if (SUCCEEDED(hr) && dispatcherController) {
+			// Try to get the DispatcherQueue from the controller
+			// Using the basic IDispatcherQueueController interface instead of IDispatcherQueueController2
+			__try {
+				ComPtr<ABI::Windows::System::IDispatcherQueue> queue;
+				hr = dispatcherController->get_DispatcherQueue(&queue);
+				
+				if (SUCCEEDED(hr) && queue) {
 					// Create WinRT wrapper from ABI interface
-					winrt::Windows::System::DispatcherQueueController controller{ nullptr };
-					winrt::copy_from_abi(controller, dispatcherController.Get());
-					dispatcherQueue = controller.DispatcherQueue();
+					winrt::Windows::System::DispatcherQueue tempQueue{ nullptr };
+					winrt::copy_from_abi(tempQueue, queue.get());
+					dispatcherQueue = tempQueue;
+					
 					OutputDebugStringW(L"VideoViewPlugin: DispatcherQueueController created successfully\n");
+					FreeLibrary(hCoreMessaging);
 					return true;
-				} catch (...) {
-					OutputDebugStringW(L"VideoViewPlugin: Failed to get DispatcherQueue from controller\n");
 				}
-			} else {
-				OutputDebugStringW(L"VideoViewPlugin: Failed to create DispatcherQueueController\n");
 			}
-		} catch (...) {
-			OutputDebugStringW(L"VideoViewPlugin: Exception while creating DispatcherQueueController\n");
-			FreeLibrary(hCoreMessaging);
+			__except(EXCEPTION_EXECUTE_HANDLER) {
+				OutputDebugStringW(L"VideoViewPlugin: Exception while getting DispatcherQueue from controller\n");
+			}
+			
+			// If we failed to get the queue, clean up the controller
+			dispatcherController.Reset();
 		}
 		
+		OutputDebugStringW(L"VideoViewPlugin: Failed to create DispatcherQueueController\n");
+		FreeLibrary(hCoreMessaging);
 		return false;
 	}
 
 	static void createDispatcherQueue() {
-		// First try to get existing dispatcher queue for current thread
-		dispatcherQueue = DispatcherQueue::GetForCurrentThread();
-		if (dispatcherQueue) {
-			OutputDebugStringW(L"VideoViewPlugin: Using existing DispatcherQueue for current thread\n");
+		// Skip dispatcher queue creation on older Windows versions
+		if (!IsWindows1803OrLater()) {
+			OutputDebugStringW(L"VideoViewPlugin: Skipping DispatcherQueue creation on pre-1803 Windows\n");
 			return;
+		}
+
+		// On Windows 1803+, we can try to use DispatcherQueue
+		// But we need to be careful as even on supported versions, the API might fail
+		__try {
+			// Try to get existing dispatcher queue for current thread
+			dispatcherQueue = DispatcherQueue::GetForCurrentThread();
+			if (dispatcherQueue) {
+				OutputDebugStringW(L"VideoViewPlugin: Using existing DispatcherQueue for current thread\n");
+				return;
+			}
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) {
+			OutputDebugStringW(L"VideoViewPlugin: DispatcherQueue::GetForCurrentThread() failed or not available\n");
 		}
 
 		// If no existing queue, try to create one
 		if (!TryCreateDispatcherQueueController()) {
-			OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController (older Windows version or error)\n");
-			// On older Windows versions or when creation fails, we'll proceed without the dispatcher queue
+			OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController\n");
 			// The SafeEnqueue function will handle execution on the current thread as fallback
 		}
 	}
@@ -717,17 +745,23 @@ public:
 		
 		// Enable frame server only if supported
 		if (IsWindows1803OrLater()) {
-			try {
+			__try {
 				mediaPlayer.IsVideoFrameServerEnabled(true);
 				OutputDebugStringW(L"VideoViewPlugin: Video frame server enabled\n");
-			} catch (...) {
-				OutputDebugStringW(L"VideoViewPlugin: Failed to enable video frame server, continuing without it\n");
+			}
+			__except(EXCEPTION_EXECUTE_HANDLER) {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to enable video frame server\n");
 			}
 		} else {
 			OutputDebugStringW(L"VideoViewPlugin: Video frame server not supported on this Windows version\n");
 		}
 		
-		mediaPlayer.CommandManager().IsEnabled(false);
+		__try {
+			mediaPlayer.CommandManager().IsEnabled(false);
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to disable command manager\n");
+		}
 	}
 
 	~VideoController() {
@@ -783,180 +817,174 @@ public:
 				return nullptr;
 			}
 		));
-		auto playbackSession = mediaPlayer.PlaybackSession();
+		
+		// Wrap all event handlers in try-catch to prevent crashes on older Windows
+		__try {
+			auto playbackSession = mediaPlayer.PlaybackSession();
 
-		playbackSession.NaturalVideoSizeChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0) {
-					sharedThis->textureBuffer.width = sharedThis->subTextureBuffer.width = playbackSession.NaturalVideoWidth();
-					sharedThis->textureBuffer.height = sharedThis->subTextureBuffer.height = playbackSession.NaturalVideoHeight();
-					if (sharedThis->eventSink) {
-						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("videoSize") },
-							{ string("width"), EncodableValue((double)sharedThis->textureBuffer.width) },
-							{ string("height"), EncodableValue((double)sharedThis->textureBuffer.height) }
-						});
-					}
-				}
-			}));
-		});
-
-		playbackSession.PositionChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 1) {
-					sharedThis->setPosition();
-				}
-			}));
-		});
-
-		playbackSession.SeekCompleted([weakThis](auto, auto) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->eventSink) {
-					if (sharedThis->state == 1) {
-						sharedThis->loadEnd();
-					} else if (sharedThis->state > 1) {
-						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("seekEnd") }
-						});
-					}
-				}
-			}));
-		});
-
-		playbackSession.BufferingStarted([weakThis](auto, auto) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
-					sharedThis->eventSink->Success(EncodableMap{
-						{ string("event"), string("loading") },
-						{ string("value"), EncodableValue(true) }
-					});
-				}
-			}));
-		});
-
-		playbackSession.BufferingEnded([weakThis](auto, auto) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
-					sharedThis->eventSink->Success(EncodableMap{
-						{ string("event"), string("loading") },
-						{ string("value"), EncodableValue(false) }
-					});
-				}
-			}));
-		});
-
-		playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
-					auto buffered = playbackSession.GetBufferedRanges();
-					for (uint32_t i = 0; i < buffered.Size(); i++) {
-						auto start = buffered.GetAt(i).Start.count();
-						auto end = buffered.GetAt(i).End.count();
-						auto pos = playbackSession.Position().count();
-						if (start <= pos && end >= pos) {
-							auto t = end / 10000;
-							if (sharedThis->bufferPosition != t) {
-								sharedThis->bufferPosition = t;
-								if (sharedThis->state > 1) {
-									sharedThis->sendBuffer(pos / 10000);
-								}
-							}
-							break;
+			playbackSession.NaturalVideoSizeChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
+				SafeEnqueue([weakThis, playbackSession]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 0) {
+						sharedThis->textureBuffer.width = sharedThis->subTextureBuffer.width = playbackSession.NaturalVideoWidth();
+						sharedThis->textureBuffer.height = sharedThis->subTextureBuffer.height = playbackSession.NaturalVideoHeight();
+						if (sharedThis->eventSink) {
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("videoSize") },
+								{ string("width"), EncodableValue((double)sharedThis->textureBuffer.width) },
+								{ string("height"), EncodableValue((double)sharedThis->textureBuffer.height) }
+							});
 						}
 					}
-				}
-			}));
-		});
-
-		// Video frame events are only available in Windows 1803+
-		if (IsWindows1803OrLater()) {
-			try {
-				mediaPlayer.SubtitleFrameChanged([weakThis](auto, auto) {
-					drawFrame(weakThis, true);
 				});
+			});
 
-				mediaPlayer.VideoFrameAvailable([weakThis](auto, auto) {
-					drawFrame(weakThis, false);
+			playbackSession.PositionChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
+				SafeEnqueue([weakThis, playbackSession]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 1) {
+						sharedThis->setPosition();
+					}
 				});
-				OutputDebugStringW(L"VideoViewPlugin: Video frame events registered\n");
-			} catch (...) {
-				OutputDebugStringW(L"VideoViewPlugin: Failed to register video frame events\n");
-			}
-		} else {
-			OutputDebugStringW(L"VideoViewPlugin: Video frame events not supported on this Windows version\n");
+			});
+
+			playbackSession.SeekCompleted([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->eventSink) {
+						if (sharedThis->state == 1) {
+							sharedThis->loadEnd();
+						} else if (sharedThis->state > 1) {
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("seekEnd") }
+							});
+						}
+					}
+				});
+			});
+
+			playbackSession.BufferingStarted([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
+						sharedThis->eventSink->Success(EncodableMap{
+							{ string("event"), string("loading") },
+							{ string("value"), EncodableValue(true) }
+						});
+					}
+				});
+			});
+
+			playbackSession.BufferingEnded([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
+						sharedThis->eventSink->Success(EncodableMap{
+							{ string("event"), string("loading") },
+							{ string("value"), EncodableValue(false) }
+						});
+					}
+				});
+			});
+
+			playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
+				SafeEnqueue([weakThis, playbackSession]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
+						auto buffered = playbackSession.GetBufferedRanges();
+						for (uint32_t i = 0; i < buffered.Size(); i++) {
+							auto start = buffered.GetAt(i).Start.count();
+							auto end = buffered.GetAt(i).End.count();
+							auto pos = playbackSession.Position().count();
+							if (start <= pos && end >= pos) {
+								auto t = end / 10000;
+								if (sharedThis->bufferPosition != t) {
+									sharedThis->bufferPosition = t;
+									if (sharedThis->state > 1) {
+										sharedThis->sendBuffer(pos / 10000);
+									}
+								}
+								break;
+							}
+						}
+					}
+				});
+			});
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to set up playback session event handlers\n");
 		}
 
-		mediaPlayer.MediaFailed([weakThis](auto, MediaPlayerFailedEventArgs const& reason) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis, reason]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0) {
-					sharedThis->close();
-					if (sharedThis->eventSink) {
-						auto message = "Unknown";
-						auto err = reason.Error();
-						if (err == MediaPlayerError::Aborted) {
-							message = "Aborted";
-						} else if (err == MediaPlayerError::NetworkError) {
-							message = "NetworkError";
-						} else if (err == MediaPlayerError::DecodingError) {
-							message = "DecodingError";
-						} else if (err == MediaPlayerError::SourceNotSupported) {
-							message = "SourceNotSupported";
-						}
-						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("error") },
-							{ string("value"), string(message) }
-						});
-					}
-				}
-			}));
-		});
-
-		mediaPlayer.MediaOpened([weakThis](auto, auto) {
-			auto sharedThis = weakThis.lock();
-			if (sharedThis && sharedThis->state == 1) {
-				auto playbackSession = sharedThis->mediaPlayer.PlaybackSession();
-				auto live = playbackSession.NaturalDuration().count() == INT64_MAX;
-				SafeSetRealTimePlayback(sharedThis->mediaPlayer, live);
-				if (live) {
-					SafeEnqueue(DispatcherQueueHandler([weakThis]() {
-						auto sharedThis = weakThis.lock();
-						if (sharedThis) {
-							sharedThis->loadEnd();
-						}
-					}));
-				} else {
-					playbackSession.Position(chrono::milliseconds(sharedThis->position));
-					sharedThis->position = 0;
-				}
-			}
-		});
-
-		mediaPlayer.MediaEnded([weakThis](auto, auto) {
-			SafeEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 2) {
-					if (SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
+		__try {
+			mediaPlayer.MediaFailed([weakThis](auto, MediaPlayerFailedEventArgs const& reason) {
+				SafeEnqueue([weakThis, reason]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 0) {
 						sharedThis->close();
-					} else if (sharedThis->looping) {
-						sharedThis->mediaPlayer.Play();
-					} else {
-						sharedThis->state = 2;
+						if (sharedThis->eventSink) {
+							auto message = "Unknown";
+							auto err = reason.Error();
+							if (err == MediaPlayerError::Aborted) {
+								message = "Aborted";
+							} else if (err == MediaPlayerError::NetworkError) {
+								message = "NetworkError";
+							} else if (err == MediaPlayerError::DecodingError) {
+								message = "DecodingError";
+							} else if (err == MediaPlayerError::SourceNotSupported) {
+								message = "SourceNotSupported";
+							}
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("error") },
+								{ string("value"), string(message) }
+							});
+						}
 					}
-					if (sharedThis->eventSink) {
-						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("finished") }
+				});
+			});
+
+			mediaPlayer.MediaOpened([weakThis](auto, auto) {
+				auto sharedThis = weakThis.lock();
+				if (sharedThis && sharedThis->state == 1) {
+					auto playbackSession = sharedThis->mediaPlayer.PlaybackSession();
+					auto live = playbackSession.NaturalDuration().count() == INT64_MAX;
+					SafeSetRealTimePlayback(sharedThis->mediaPlayer, live);
+					if (live) {
+						SafeEnqueue([weakThis]() {
+							auto sharedThis = weakThis.lock();
+							if (sharedThis) {
+								sharedThis->loadEnd();
+							}
 						});
+					} else {
+						playbackSession.Position(chrono::milliseconds(sharedThis->position));
+						sharedThis->position = 0;
 					}
 				}
-			}));
-		});
+			});
+
+			mediaPlayer.MediaEnded([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 2) {
+						if (SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
+							sharedThis->close();
+						} else if (sharedThis->looping) {
+							sharedThis->mediaPlayer.Play();
+						} else {
+							sharedThis->state = 2;
+						}
+						if (sharedThis->eventSink) {
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("finished") }
+							});
+						}
+					}
+				});
+			});
+		}
+		__except(EXCEPTION_EXECUTE_HANDLER) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to set up media event handlers\n");
+		}
 	}
 
 	void open(const string& src) {
