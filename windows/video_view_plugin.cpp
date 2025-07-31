@@ -200,10 +200,10 @@ class VideoController : public enable_shared_from_this<VideoController> {
 
 	static void SafeEnqueue(DispatcherQueueHandler const& handler) {
 		if (dispatcherQueue) {
-			__try {
+			try {
 				dispatcherQueue.TryEnqueue(handler);
 			}
-			__except(EXCEPTION_EXECUTE_HANDLER) {
+			catch (...) {
 				// If TryEnqueue fails, execute immediately
 				try {
 					handler();
@@ -266,14 +266,14 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		if (SUCCEEDED(hr) && dispatcherController) {
 			// Try to get the DispatcherQueue from the controller
 			// Using the basic IDispatcherQueueController interface instead of IDispatcherQueueController2
-			__try {
+			try {
 				ComPtr<ABI::Windows::System::IDispatcherQueue> queue;
 				hr = dispatcherController->get_DispatcherQueue(&queue);
 				
 				if (SUCCEEDED(hr) && queue) {
 					// Create WinRT wrapper from ABI interface
 					winrt::Windows::System::DispatcherQueue tempQueue{ nullptr };
-					winrt::copy_from_abi(tempQueue, queue.get());
+					winrt::copy_from_abi(tempQueue, queue.Get());
 					dispatcherQueue = tempQueue;
 					
 					OutputDebugStringW(L"VideoViewPlugin: DispatcherQueueController created successfully\n");
@@ -281,7 +281,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 					return true;
 				}
 			}
-			__except(EXCEPTION_EXECUTE_HANDLER) {
+			catch (...) {
 				OutputDebugStringW(L"VideoViewPlugin: Exception while getting DispatcherQueue from controller\n");
 			}
 			
@@ -303,7 +303,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 
 		// On Windows 1803+, we can try to use DispatcherQueue
 		// But we need to be careful as even on supported versions, the API might fail
-		__try {
+		try {
 			// Try to get existing dispatcher queue for current thread
 			dispatcherQueue = DispatcherQueue::GetForCurrentThread();
 			if (dispatcherQueue) {
@@ -311,7 +311,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				return;
 			}
 		}
-		__except(EXCEPTION_EXECUTE_HANDLER) {
+		catch (...) {
 			OutputDebugStringW(L"VideoViewPlugin: DispatcherQueue::GetForCurrentThread() failed or not available\n");
 		}
 
@@ -745,21 +745,21 @@ public:
 		
 		// Enable frame server only if supported
 		if (IsWindows1803OrLater()) {
-			__try {
+			try {
 				mediaPlayer.IsVideoFrameServerEnabled(true);
 				OutputDebugStringW(L"VideoViewPlugin: Video frame server enabled\n");
 			}
-			__except(EXCEPTION_EXECUTE_HANDLER) {
+			catch (...) {
 				OutputDebugStringW(L"VideoViewPlugin: Failed to enable video frame server\n");
 			}
 		} else {
 			OutputDebugStringW(L"VideoViewPlugin: Video frame server not supported on this Windows version\n");
 		}
 		
-		__try {
+		try {
 			mediaPlayer.CommandManager().IsEnabled(false);
 		}
-		__except(EXCEPTION_EXECUTE_HANDLER) {
+		catch (...) {
 			OutputDebugStringW(L"VideoViewPlugin: Failed to disable command manager\n");
 		}
 	}
@@ -819,7 +819,7 @@ public:
 		));
 		
 		// Wrap all event handlers in try-catch to prevent crashes on older Windows
-		__try {
+		try {
 			auto playbackSession = mediaPlayer.PlaybackSession();
 
 			playbackSession.NaturalVideoSizeChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
@@ -911,11 +911,11 @@ public:
 				});
 			});
 		}
-		__except(EXCEPTION_EXECUTE_HANDLER) {
+		catch (...) {
 			OutputDebugStringW(L"VideoViewPlugin: Failed to set up playback session event handlers\n");
 		}
 
-		__try {
+		try {
 			mediaPlayer.MediaFailed([weakThis](auto, MediaPlayerFailedEventArgs const& reason) {
 				SafeEnqueue([weakThis, reason]() {
 					auto sharedThis = weakThis.lock();
@@ -982,7 +982,7 @@ public:
 				});
 			});
 		}
-		__except(EXCEPTION_EXECUTE_HANDLER) {
+		catch (...) {
 			OutputDebugStringW(L"VideoViewPlugin: Failed to set up media event handlers\n");
 		}
 	}
