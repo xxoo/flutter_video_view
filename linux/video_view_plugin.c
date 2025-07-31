@@ -374,6 +374,21 @@ static void video_controller_loaded(VideoController* self) {
 	}
 }
 
+static void* video_controller_gl_init(void* addrCtx, const char* name) {
+	void* (*func)(const char*) = addrCtx;
+	return func(name);
+}
+
+static void video_controller_texture_update_callback(void* id) {
+	// this function is not called in the main thread
+	g_mutex_lock(&plugin->mutex);
+	VideoController* self = g_tree_lookup(plugin->players, id);
+	g_mutex_unlock(&plugin->mutex);
+	if (self) {
+		fl_texture_registrar_mark_texture_frame_available(self->textureRegistrar, FL_TEXTURE(self));
+	}
+}
+
 static void video_controller_close(VideoController* self) {
 	self->state = 0;
 	self->width = 0;
@@ -397,25 +412,54 @@ static void video_controller_close(VideoController* self) {
 
 static void video_controller_open(VideoController* self, const gchar* source) {
 	video_controller_close(self);
-	int result;
-	if (g_str_has_prefix(source, "asset://")) {
-		g_autoptr(FlDartProject) project = fl_dart_project_new();
-		gchar* path = g_strdup_printf("%s%s", fl_dart_project_get_assets_path(project), &source[7]);
-		const gchar* cmd[] = { "loadfile", path, NULL };
-		result = mpv_command(self->mpv, cmd);
-		g_free(path);
-	} else {
-		const gchar* cmd[] = { "loadfile", source, NULL };
-		result = mpv_command(self->mpv, cmd);
+	if (!self->mpvRenderContext) {
+		GdkDisplay* display = gdk_display_get_default();
+		if (display) {
+			void* func = NULL;
+			if (GDK_IS_WAYLAND_DISPLAY(display)) {
+				func = eglGetProcAddress;
+			} else if (GDK_IS_X11_DISPLAY(display)) {
+				func = glXGetProcAddressARB;
+			}
+			if (func) {
+				mpv_opengl_init_params gl_init_params = { video_controller_gl_init, func };
+				mpv_render_param params[] = {
+					{ MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_OPENGL },
+					{ MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params },
+					{ MPV_RENDER_PARAM_INVALID, NULL }
+				};
+				if (mpv_render_context_create(&self->mpvRenderContext, self->mpv, params) == MPV_ERROR_SUCCESS) {
+					mpv_render_context_set_update_callback(self->mpvRenderContext, video_controller_texture_update_callback, (void*)self->id);
+				}
+			}
+		}
 	}
-	if (result == 0) {
-		self->state = 1;
-		self->source = g_strdup(source);
-		video_controller_set_pause(self, TRUE);
+	if (self->mpvRenderContext) {
+		int result;
+		if (g_str_has_prefix(source, "asset://")) {
+			g_autoptr(FlDartProject) project = fl_dart_project_new();
+			gchar* path = g_strdup_printf("%s%s", fl_dart_project_get_assets_path(project), &source[7]);
+			const gchar* cmd[] = { "loadfile", path, NULL };
+			result = mpv_command(self->mpv, cmd);
+			g_free(path);
+		} else {
+			const gchar* cmd[] = { "loadfile", source, NULL };
+			result = mpv_command(self->mpv, cmd);
+		}
+		if (result == MPV_ERROR_SUCCESS) {
+			self->state = 1;
+			self->source = g_strdup(source);
+			video_controller_set_pause(self, TRUE);
+		} else {
+			g_autoptr(FlValue) evt = fl_value_new_map();
+			fl_value_set_string_take(evt, "event", fl_value_new_string("error"));
+			fl_value_set_string_take(evt, "event", fl_value_new_string(mpv_error_string(result)));
+			fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
+		}
 	} else {
 		g_autoptr(FlValue) evt = fl_value_new_map();
 		fl_value_set_string_take(evt, "event", fl_value_new_string("error"));
-		fl_value_set_string_take(evt, "event", fl_value_new_string(mpv_error_string(result)));
+		fl_value_set_string_take(evt, "value", fl_value_new_string("gl context not available"));
 		fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
 	}
 }
@@ -629,16 +673,6 @@ static void video_controller_wakeup_callback(void* id) {
 	g_idle_add(video_controller_event_callback, id);
 }
 
-static void video_controller_texture_update_callback(void* id) {
-	// this function is not called in the main thread
-	g_mutex_lock(&plugin->mutex);
-	VideoController* self = g_tree_lookup(plugin->players, id);
-	g_mutex_unlock(&plugin->mutex);
-	if (self) {
-		fl_texture_registrar_mark_texture_frame_available(self->textureRegistrar, FL_TEXTURE(self));
-	}
-}
-
 static gboolean video_controller_texture_populate(FlTextureGL* texture, uint32_t* target, uint32_t* name, uint32_t* width, uint32_t* height, GError** error) {
 	VideoController* self = MEDIAPLAYER(texture);
 	if (self->state > 0 && self->width > 0 && self->height > 0) {
@@ -675,42 +709,6 @@ static gboolean video_controller_texture_populate(FlTextureGL* texture, uint32_t
 	return FALSE;
 }
 
-static void* video_controller_gl_init(void* addrCtx, const char* name) {
-	void* (*func)(const char*) = addrCtx;
-	return func(name);
-}
-
-static gboolean video_controller_context_init(void* id) {
-	VideoController* self = g_tree_lookup(plugin->players, id);
-	if (self) {
-		GdkDisplay* display = gdk_display_get_default();
-		if (display) {
-			void* func = NULL;
-			if (GDK_IS_WAYLAND_DISPLAY(display)) {
-				func = eglGetProcAddress;
-			} else if (GDK_IS_X11_DISPLAY(display)) {
-				func = glXGetProcAddressARB;
-			}
-			if (func) {
-				mpv_opengl_init_params gl_init_params = { video_controller_gl_init, func };
-				mpv_render_param params[] = {
-					{ MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_OPENGL },
-					{ MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params },
-					{ MPV_RENDER_PARAM_INVALID, NULL }
-				};
-				int res = mpv_render_context_create(&self->mpvRenderContext, self->mpv, params);
-				if (res == MPV_ERROR_SUCCESS) {
-					mpv_render_context_set_update_callback(self->mpvRenderContext, video_controller_texture_update_callback, (void*)self->id);
-				} else if (res == MPV_ERROR_UNSUPPORTED && self->init_display_retries < 4095) {
-					self->init_display_retries++;
-					return TRUE;
-				}
-			}
-		}
-	}
-	return FALSE;
-}
-
 static void video_controller_class_init(VideoControllerClass* klass) {
 	FL_TEXTURE_GL_CLASS(klass)->populate = video_controller_texture_populate;
 }
@@ -729,7 +727,7 @@ static void video_controller_init(VideoController* self) {
 	self->preferredSubtitleLanguage = NULL;
 	self->looping = self->streaming = self->networking = self->seeking = false;
 	self->init_display_retries = 0;
-	//self->mpvRenderContext = NULL;
+	self->mpvRenderContext = NULL;
 }
 
 static VideoController* video_controller_new(FlMethodCodec* codec, FlBinaryMessenger* messenger, FlTextureRegistrar* textureRegistrar) {
@@ -764,7 +762,6 @@ static VideoController* video_controller_new(FlMethodCodec* codec, FlBinaryMesse
 	mpv_observe_property(self->mpv, 0, "paused-for-cache", MPV_FORMAT_FLAG);
 	mpv_observe_property(self->mpv, 0, "pause", MPV_FORMAT_FLAG);
 	mpv_set_wakeup_callback(self->mpv, video_controller_wakeup_callback, (void*)self->id);
-	g_idle_add(video_controller_context_init, (void*)self->id);
 	return self;
 }
 
