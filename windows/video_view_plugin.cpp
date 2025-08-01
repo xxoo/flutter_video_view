@@ -356,6 +356,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				mtx.lock();
 				auto& surface = isSubtitle ? sharedThis->subtitleSurface : sharedThis->videoSurface;
 				if (!surface || buffer.width != buffer.visible_width || buffer.height != buffer.visible_height) {
+					OutputDebugStringW(L"VideoViewPlugin: Creating new surface/texture\n");
 					buffer.visible_width = buffer.width;
 					buffer.visible_height = buffer.height;
 					D3D11_TEXTURE2D_DESC desc{
@@ -371,20 +372,39 @@ class VideoController : public enable_shared_from_this<VideoController> {
 						D3D11_RESOURCE_MISC_SHARED
 					};
 					com_ptr<ID3D11Texture2D> d3d11Texture;
-					check_hresult(d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put()));
+					HRESULT hr = d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put());
+					if (FAILED(hr)) {
+						OutputDebugStringW(L"VideoViewPlugin: Failed to create D3D11 texture\n");
+						mtx.unlock();
+						return;
+					}
 					//buffer->handle = d3d11Texture.get();
 					if (isSubtitle) {
-						check_hresult(d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put()));
+						hr = d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put());
+						if (FAILED(hr)) {
+							OutputDebugStringW(L"VideoViewPlugin: Failed to create render target view\n");
+						}
 					}
 					com_ptr<IDXGIResource> resource;
 					d3d11Texture.as(resource);
-					check_hresult(resource->GetSharedHandle(&buffer.handle));
+					hr = resource->GetSharedHandle(&buffer.handle);
+					if (FAILED(hr)) {
+						OutputDebugStringW(L"VideoViewPlugin: Failed to get shared handle\n");
+						mtx.unlock();
+						return;
+					}
 					com_ptr<IDXGISurface> dxgiSurface;
 					d3d11Texture.as(dxgiSurface);
 					if (surface) {
 						surface.Close();
 					}
-					check_hresult(CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface))));
+					hr = CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface)));
+					if (FAILED(hr)) {
+						OutputDebugStringW(L"VideoViewPlugin: Failed to create Direct3D11Surface\n");
+						mtx.unlock();
+						return;
+					}
+					OutputDebugStringW(L"VideoViewPlugin: Surface/texture created successfully\n");
 				} else if (isSubtitle) {
 					const float clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
 					d3dContext->ClearRenderTargetView(sharedThis->subtitleRenderTargetView.get(), clearColor);
@@ -399,15 +419,15 @@ class VideoController : public enable_shared_from_this<VideoController> {
 							sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
 						}
 					} catch (...) {
-						OutputDebugStringW(L"VideoViewPlugin: Exception in new surface rendering API, falling back\n");
-						// Fallback: skip frame rendering for this call
+						OutputDebugStringW(L"VideoViewPlugin: Exception in surface rendering API\n");
+						// Don't fall back here - if the API fails, we need to investigate why
 					}
 				} else {
-					// For older Windows versions, we can't use surface rendering
-					// The video will still play but without hardware-accelerated rendering
 					OutputDebugStringW(L"VideoViewPlugin: Surface rendering not available on this Windows version\n");
 				}
 				mtx.unlock();
+			} else {
+				OutputDebugStringW(L"VideoViewPlugin: Buffer dimensions are zero, skipping frame\n");
 			}
 		}
 	}
@@ -590,10 +610,19 @@ class VideoController : public enable_shared_from_this<VideoController> {
 
 	void loadEnd() {
 		if (state == 1) {
+			OutputDebugStringW(L"VideoViewPlugin: Media load completed\n");
 			auto playbackSession = mediaPlayer.PlaybackSession();
 			state = 2;
 			mediaPlayer.Volume(volume);
 			playbackSession.PlaybackRate(speed);
+			
+			// Log video dimensions
+			auto videoWidth = playbackSession.NaturalVideoWidth();
+			auto videoHeight = playbackSession.NaturalVideoHeight();
+			wchar_t debugMsg[256];
+			swprintf_s(debugMsg, L"VideoViewPlugin: Video dimensions: %ux%u\n", videoWidth, videoHeight);
+			OutputDebugStringW(debugMsg);
+			
 			EncodableMap audioTracks{};
 			EncodableMap subtitleTracks{};
 			auto item = mediaPlayer.Source().as<MediaPlaybackItem>();
@@ -603,6 +632,11 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			if (selectedAudioTrackId >= 0 && audiotracks.SelectedIndex() != selectedAudioTrackId) {
 				audiotracks.SelectedIndex(selectedAudioTrackId);
 			}
+			
+			swprintf_s(debugMsg, L"VideoViewPlugin: Found %u audio tracks\n", audiotracks.Size());
+			OutputDebugStringW(debugMsg);
+			
+			// ...existing code for audio tracks...
 			for (uint16_t i = 0; i < audiotracks.Size(); i++) {
 				auto track = audiotracks.GetAt(i);
 				auto props = track.GetEncodingProperties();
@@ -622,6 +656,11 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			}
 			auto subtitletracks = item.TimedMetadataTracks();
 			auto selectedSubtitleTrackId = getDefaultTrack(MediaTrackKind::TimedMetadata);
+			
+			swprintf_s(debugMsg, L"VideoViewPlugin: Found %u subtitle tracks\n", subtitletracks.Size());
+			OutputDebugStringW(debugMsg);
+			
+			// ...existing code for subtitle tracks...
 			for (uint16_t i = 0; i < subtitletracks.Size(); i++) {
 				auto track = subtitletracks.GetAt(i);
 				auto kind = track.TimedMetadataKind();
@@ -642,6 +681,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				}
 			}
 			if (eventSink) {
+				OutputDebugStringW(L"VideoViewPlugin: Sending mediaInfo event\n");
 				eventSink->Success(EncodableMap{
 					{ string("event"), string("mediaInfo") },
 					{ string("audioTracks"), audioTracks },
@@ -788,28 +828,39 @@ public:
 	}
 
 	void init(PluginRegistrarWindows& registrar) {
+		OutputDebugStringW(L"VideoViewPlugin: Initializing VideoController\n");
 		auto weakThis = weak_from_this();
 		textureRegistrar = registrar.texture_registrar();
 		texture = createTextureVariant(weakThis, false);
 		subTexture = createTextureVariant(weakThis, true);
 		textureId = textureRegistrar->RegisterTexture(texture);
 		subtitleId = textureRegistrar->RegisterTexture(subTexture);
-		char id[32];
-		sprintf_s(id, "VideoViewPlugin/%lld", textureId);
+		
+		wchar_t debugMsg[256];
+		swprintf_s(debugMsg, L"VideoViewPlugin: Registered textures - Video: %lld, Subtitle: %lld\n", textureId, subtitleId);
+		OutputDebugStringW(debugMsg);
+		
+		// Create event channel with proper naming
+		char channelName[64];
+		sprintf_s(channelName, "VideoViewPlugin/%lld", textureId);
 		eventChannel = new EventChannel<EncodableValue>(
 			registrar.messenger(),
-			id,
+			channelName,
 			&StandardMethodCodec::GetInstance()
 		);
+		
+		// Set up stream handler
 		eventChannel->SetStreamHandler(make_unique<StreamHandlerFunctions<EncodableValue>>(
-			[weakThis](const EncodableValue* arguments, unique_ptr<EventSink<EncodableValue>>&& events) {
+			[weakThis](const EncodableValue* arguments, unique_ptr<EventSink<EncodableValue>>&& events) -> unique_ptr<StreamHandlerError<EncodableValue>> {
+				OutputDebugStringW(L"VideoViewPlugin: EventChannel stream started\n");
 				auto sharedThis = weakThis.lock();
 				if (sharedThis) {
 					sharedThis->eventSink = move(events);
 				}
 				return nullptr;
 			},
-			[weakThis](const EncodableValue* arguments) {
+			[weakThis](const EncodableValue* arguments) -> unique_ptr<StreamHandlerError<EncodableValue>> {
+				OutputDebugStringW(L"VideoViewPlugin: EventChannel stream cancelled\n");
 				auto sharedThis = weakThis.lock();
 				if (sharedThis) {
 					sharedThis->eventSink = nullptr;
@@ -828,6 +879,12 @@ public:
 					if (sharedThis && sharedThis->state > 0) {
 						sharedThis->textureBuffer.width = sharedThis->subTextureBuffer.width = playbackSession.NaturalVideoWidth();
 						sharedThis->textureBuffer.height = sharedThis->subTextureBuffer.height = playbackSession.NaturalVideoHeight();
+						
+						wchar_t debugMsg[256];
+						swprintf_s(debugMsg, L"VideoViewPlugin: Video size changed to %zux%zu\n", 
+							sharedThis->textureBuffer.width, sharedThis->textureBuffer.height);
+						OutputDebugStringW(debugMsg);
+						
 						if (sharedThis->eventSink) {
 							sharedThis->eventSink->Success(EncodableMap{
 								{ string("event"), string("videoSize") },
@@ -985,9 +1042,30 @@ public:
 		catch (...) {
 			OutputDebugStringW(L"VideoViewPlugin: Failed to set up media event handlers\n");
 		}
+
+		// Add video frame available handler if supported
+		if (IsWindows1803OrLater()) {
+			try {
+				mediaPlayer.VideoFrameAvailable([weakThis](MediaPlayer const&, auto) {
+					drawFrame(weakThis, false);
+				});
+				
+				mediaPlayer.SubtitleFrameChanged([weakThis](MediaPlayer const&, auto) {
+					drawFrame(weakThis, true);
+				});
+				
+				OutputDebugStringW(L"VideoViewPlugin: Video frame handlers registered\n");
+			}
+			catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to register video frame handlers\n");
+			}
+		} else {
+			OutputDebugStringW(L"VideoViewPlugin: Video frame handlers not supported on this Windows version\n");
+		}
 	}
 
 	void open(const string& src) {
+		OutputDebugStringW(L"VideoViewPlugin: Opening media source\n");
 		close();
 		hstring url;
 		if (src._Starts_with("asset://")) {
@@ -1010,7 +1088,20 @@ public:
 		}
 		source = src;
 		state = 1;
-		mediaPlayer.Source(MediaPlaybackItem(MediaSource::CreateFromUri(winrt::Windows::Foundation::Uri(url))));
+		
+		wchar_t debugMsg[256];
+		auto srcWide = to_hstring(src);
+		swprintf_s(debugMsg, L"VideoViewPlugin: Setting media source to: %s\n", srcWide.c_str());
+		OutputDebugStringW(debugMsg);
+		
+		try {
+			mediaPlayer.Source(MediaPlaybackItem(MediaSource::CreateFromUri(winrt::Windows::Foundation::Uri(url))));
+			OutputDebugStringW(L"VideoViewPlugin: Media source set successfully\n");
+		}
+		catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to set media source\n");
+			state = 0;
+		}
 	}
 
 	void close() {
@@ -1039,8 +1130,13 @@ public:
 
 	void play() {
 		if (state == 2) {
+			OutputDebugStringW(L"VideoViewPlugin: Starting playback\n");
 			state = 3;
 			mediaPlayer.Play();
+		} else {
+			wchar_t debugMsg[256];
+			swprintf_s(debugMsg, L"VideoViewPlugin: Cannot play - current state: %d\n", state);
+			OutputDebugStringW(debugMsg);
 		}
 	}
 
