@@ -37,7 +37,6 @@ typedef struct {
 	uint16_t maxHeight;
 	uint16_t overrideAudio; // 0 for auto otherwise track id
 	uint16_t overrideSubtitle;
-	uint16_t init_display_retries;
 	bool looping;
 	bool streaming;
 	bool networking;
@@ -209,7 +208,11 @@ static void video_controller_set_default_track(const VideoController* self, cons
 	}
 }
 
-static void video_controller_set_max_size(const VideoController* self) {
+static void video_controller_set_max_size(VideoController* self) {
+	int64_t oldId;
+	double pos;
+	mpv_get_property(self->mpv, "vid", MPV_FORMAT_INT64, &oldId);
+	mpv_get_property(self->mpv, "time-pos/full", MPV_FORMAT_DOUBLE, &pos);
 	if (self->maxWidth > 0 || self->maxHeight > 0) {
 		uint16_t id = 0;
 		uint16_t maxWidth = 0;
@@ -237,13 +240,18 @@ static void video_controller_set_max_size(const VideoController* self) {
 		if (id == 0) {
 			id = minId;
 		}
-		if (id != 0) {
+		if (id != 0 && id != oldId) {
 			gchar* p = g_strdup_printf("%d", id);
 			mpv_set_property_string(self->mpv, "vid", p);
 			g_free(p);
 		}
 	} else {
 		mpv_set_property_string(self->mpv, "vid", "auto");
+	}
+	int64_t newId;
+	mpv_get_property(self->mpv, "vid", MPV_FORMAT_INT64, &newId);
+	if (newId != oldId) {
+		video_controller_just_seek_to(self, (int64_t)(pos * 1000), true, false);
 	}
 }
 
@@ -726,7 +734,6 @@ static void video_controller_init(VideoController* self) {
 	self->preferredAudioLanguage = NULL;
 	self->preferredSubtitleLanguage = NULL;
 	self->looping = self->streaming = self->networking = self->seeking = false;
-	self->init_display_retries = 0;
 	self->mpvRenderContext = NULL;
 }
 
@@ -835,6 +842,11 @@ static void video_view_plugin_init(VideoViewPlugin* self) {
 	printf("mutex init: %p\n", &self->mutex);
 }
 
+static VideoController* video_view_plugin_get_player(VideoViewPlugin* self, FlValue* args, bool isMap) {
+	const int64_t id = fl_value_get_int(isMap ? fl_value_lookup_string(args, "id") : args);
+	return g_tree_lookup(self->players, (void*)id);
+}
+
 static void video_view_plugin_method_call(FlMethodChannel* channel, FlMethodCall* method_call, void* user_data) {
 	VideoViewPlugin* self = user_data;
 	const gchar* method = fl_method_call_get_name(method_call);
@@ -852,64 +864,64 @@ static void video_view_plugin_method_call(FlMethodChannel* channel, FlMethodCall
 		if (fl_value_get_type(args) == FL_VALUE_TYPE_NULL) {
 			video_view_plugin_clear(self);
 		} else {
-			const void* id = (void*)fl_value_get_int(args);
+			const int64_t id = fl_value_get_int(args);
 			g_mutex_lock(&self->mutex);
-			g_tree_remove(self->players, id);
+			g_tree_remove(self->players, (void*)id);
 			g_mutex_unlock(&self->mutex);
 		}
 	} else if (g_str_equal(method, "open")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const gchar* value = fl_value_get_string(fl_value_lookup_string(args, "value"));
 		video_controller_open(player, value);
 	} else if (g_str_equal(method, "close")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(args));
+		VideoController* player = video_view_plugin_get_player(self, args, false);
 		video_controller_close(player);
 	} else if (g_str_equal(method, "play")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(args));
+		VideoController* player = video_view_plugin_get_player(self, args, false);
 		video_controller_play(player);
 	} else if (g_str_equal(method, "pause")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(args));
+		VideoController* player = video_view_plugin_get_player(self, args, false);
 		video_controller_pause(player);
 	} else if (g_str_equal(method, "seekTo")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const int64_t position = fl_value_get_int(fl_value_lookup_string(args, "position"));
 		const bool fast = fl_value_get_bool(fl_value_lookup_string(args, "fast"));
 		video_controller_seek_to(player, position, fast);
 	} else if (g_str_equal(method, "setVolume")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const double value = fl_value_get_float(fl_value_lookup_string(args, "value"));
 		video_controller_set_volume(player, value);
 	} else if (g_str_equal(method, "setSpeed")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const double value = fl_value_get_float(fl_value_lookup_string(args, "value"));
 		video_controller_set_speed(player, value);
 	} else if (g_str_equal(method, "setLooping")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const bool value = fl_value_get_bool(fl_value_lookup_string(args, "value"));
 		video_controller_set_looping(player, value);
 	} else if (g_str_equal(method, "setPreferredAudioLanguage")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const gchar* value = fl_value_get_string(fl_value_lookup_string(args, "value"));
 		video_controller_set_preferred_audio_language(player, value[0] == 0 ? NULL : value);
 	} else if (g_str_equal(method, "setPreferredSubtitleLanguage")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const gchar* value = fl_value_get_string(fl_value_lookup_string(args, "value"));
 		video_controller_set_preferred_subtitle_language(player, value[0] == 0 ? NULL : value);
 	} else if (g_str_equal(method, "setMaxBitRate")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const uint32_t value = fl_value_get_int(fl_value_lookup_string(args, "value"));
 		video_controller_set_max_bitrate(player, value);
 	} else if (g_str_equal(method, "setMaxResolution")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
-		const uint16_t width = (uint16_t)fl_value_get_float(fl_value_lookup_string(args, "width"));
-		const uint16_t height = (uint16_t)fl_value_get_float(fl_value_lookup_string(args, "height"));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
+		const uint16_t width = fl_value_get_float(fl_value_lookup_string(args, "width"));
+		const uint16_t height = fl_value_get_float(fl_value_lookup_string(args, "height"));
 		video_controller_set_max_resolution(player, width, height);
 	} else if (g_str_equal(method, "setShowSubtitle")) {
-		const VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		const VideoController* player = video_view_plugin_get_player(self, args, true);
 		const bool value = fl_value_get_bool(fl_value_lookup_string(args, "value"));
 		video_controller_set_show_subtitle(player, value);
 	} else if (g_str_equal(method, "overrideTrack")) {
-		VideoController* player = g_tree_lookup(self->players, (void*)fl_value_get_int(fl_value_lookup_string(args, "id")));
+		VideoController* player = video_view_plugin_get_player(self, args, true);
 		const uint8_t typeId = fl_value_get_int(fl_value_lookup_string(args, "groupId"));
 		const uint16_t trackId = fl_value_get_int(fl_value_lookup_string(args, "trackId"));
 		const bool enabled = fl_value_get_bool(fl_value_lookup_string(args, "enabled"));
