@@ -1,6 +1,7 @@
 /*!
  * @license
  * https://github.com/xxoo/flutter_video_view/blob/main/web/VideoViewPlugin.js
+ * Version: 1.1.5
  * Copyright 2025 Xiao Shen.
  * Licensed under BSD 2-Clause.
  */
@@ -225,12 +226,12 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		});
 	};
 
-	/** @param {number} trackId */
-	#setAudioTrack = trackId => {
+	#setAudioTrack = () => {
+		const trackId = this.#overrideAudioTrack < 0 ? this.#getDefaultTrack(1) : this.#overrideAudioTrack;
 		if (this.#shaka) {
-			const tracks = this.#shaka.getAudioTracks();
-			if (trackId >= 0 && trackId < tracks.length) {
-				this.#shaka.selectAudioTrack(tracks[trackId]);
+			const audioTracks = this.#shaka.getAudioTracks();
+			if (trackId >= 0 && trackId < audioTracks.length) {
+				this.#shaka.selectAudioTrack(audioTracks[trackId]);
 			}
 		} else if (this.#dom.audioTracks) {
 			const audioTracks = this.#dom.audioTracks;
@@ -243,8 +244,10 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		}
 	};
 
-	/** @param {number} trackId */
-	#setSubtitleTrack = trackId => {
+	#setSubtitleTrack = () => {
+		const trackId = !this.#showSubtitle ? -1
+			: this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2)
+				: this.#overrideSubtitleTrack;
 		const textTracks = this.#dom.textTracks;
 		for (let i = 0; i < textTracks.length; i++) {
 			const mode = VideoViewPlugin.#getTrackId(textTracks, i) === trackId ? 'showing' : 'disabled';
@@ -285,20 +288,6 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			}
 		}
 		return getDefaultTrack();
-	};
-
-	/**
-	 * 1: audio, 2: subtitle
-	 * @param {1|2} type
-	 */
-	#setDefaultTrack = type => {
-		if (type === 1) {
-			this.#overrideAudioTrack = -1;
-			this.#setAudioTrack(this.#getDefaultTrack(type));
-		} else {
-			this.#overrideSubtitleTrack = -1;
-			this.#setSubtitleTrack(this.#showSubtitle ? this.#getDefaultTrack(type) : -1);
-		}
 	};
 
 	#close = () => {
@@ -511,8 +500,8 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#dom.addEventListener('loadeddata', () => {
 			if (this.#state === 1) {
 				this.#live = this.#shaka ? this.#shaka.isLive() : this.#dom.duration === Infinity;
-				this.#setDefaultTrack(1);
-				this.#setDefaultTrack(2);
+				this.setOverrideAudio(null);
+				this.setOverrideSubtitle(null);
 				if (this.#live) {
 					this.#dom.playbackRate = 1;
 				}
@@ -849,7 +838,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	setPreferredAudioLanguage(lang) {
 		this.#preferredAudioLanguage = lang;
 		if (this.#state > 1 && this.#overrideAudioTrack < 0) {
-			this.#setAudioTrack(this.#getDefaultTrack(1));
+			this.#setAudioTrack();
 		}
 	}
 
@@ -857,7 +846,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	setPreferredSubtitleLanguage(lang) {
 		this.#preferredSubtitleLanguage = lang;
 		if (this.#state > 1 && this.#showSubtitle && this.#overrideSubtitleTrack < 0) {
-			this.#setSubtitleTrack(this.#getDefaultTrack(2));
+			this.#setSubtitleTrack();
 		}
 	}
 
@@ -884,29 +873,19 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	/** @param {boolean} show */
 	setShowSubtitle(show) {
 		this.#showSubtitle = show;
-		this.#setSubtitleTrack(!show ? -1
-			: this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2)
-				: this.#overrideSubtitleTrack);
+		this.#setSubtitleTrack();
 	}
 
 	/** @param {string?} trackId */
 	setOverrideAudio(trackId) {
-		if (trackId === null) {
-			this.#setDefaultTrack(1);
-		} else {
-			this.#overrideAudioTrack = +trackId;
-			this.#setAudioTrack(this.#overrideAudioTrack);
-		}
+		this.#overrideAudioTrack = trackId === null ? -1 : +trackId;
+		this.#setAudioTrack();
 	}
 
 	/** @param {string?} trackId */
 	setOverrideSubtitle(trackId) {
-		if (trackId === null) {
-			this.#setDefaultTrack(2);
-		} else {
-			this.#overrideSubtitleTrack = +trackId;
-			this.#setSubtitleTrack(this.#overrideSubtitleTrack);
-		}
+		this.#overrideSubtitleTrack = trackId === null ? -1 : +trackId;
+		this.#setSubtitleTrack();
 	}
 
 	/** @param {string} fit */
