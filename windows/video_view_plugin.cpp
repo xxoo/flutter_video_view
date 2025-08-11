@@ -329,6 +329,8 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	int16_t getDefaultTrack(const MediaTrackKind kind) {
 		if (kind == MediaTrackKind::Audio) {
 			return getDefaultAudioTrack(preferredAudioLanguage);
+		} else if (kind == MediaTrackKind::Video) {
+			return getDefaultVideoTrack();
 		} else {
 			int16_t index = -1;
 			auto isSubtitle = kind == MediaTrackKind::TimedMetadata;
