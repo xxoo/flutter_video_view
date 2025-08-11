@@ -283,54 +283,48 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		return max(getBestMatch(lang1, lang2), def);
 	}
 
-	int16_t getDefaultVideoTrack() {
-		auto tracks = mediaPlayer.Source().as<MediaPlaybackItem>().VideoTracks();
-		uint32_t maxRes = 0;
-		uint32_t maxBit = 0;
-		int16_t maxId = -1;
-		uint32_t minRes = UINT32_MAX;
-		uint32_t minBit = UINT32_MAX;
-		int16_t minId = -1;
-		for (uint16_t i = 0; i < tracks.Size(); i++) {
-			auto props = tracks.GetAt(i).GetEncodingProperties();
-			auto bitrate = props.Bitrate();
-			auto width = props.Width();
-			auto height = props.Height();
-			uint32_t res = width * height;
-			if ((maxVideoWidth == 0 || width == 0 || width <= maxVideoWidth) && (maxVideoHeight == 0 || height == 0 || height <= maxVideoHeight) && (maxBitrate == 0 || bitrate == 0 || bitrate <= maxBitrate)) {
-				if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
-					if (bitrate > 0 && bitrate > maxBit) {
-						maxBit = bitrate;
+	int16_t getDefaultTrack(const MediaTrackKind kind) {
+		if (kind == MediaTrackKind::Video) {
+			auto tracks = mediaPlayer.Source().as<MediaPlaybackItem>().VideoTracks();
+			uint32_t maxRes = 0;
+			uint32_t maxBit = 0;
+			int16_t maxId = -1;
+			uint32_t minRes = UINT32_MAX;
+			uint32_t minBit = UINT32_MAX;
+			int16_t minId = -1;
+			for (uint16_t i = 0; i < tracks.Size(); i++) {
+				auto props = tracks.GetAt(i).GetEncodingProperties();
+				auto bitrate = props.Bitrate();
+				auto width = props.Width();
+				auto height = props.Height();
+				uint32_t res = width * height;
+				if ((maxVideoWidth == 0 || width == 0 || width <= maxVideoWidth) && (maxVideoHeight == 0 || height == 0 || height <= maxVideoHeight) && (maxBitrate == 0 || bitrate == 0 || bitrate <= maxBitrate)) {
+					if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
+						if (bitrate > 0 && bitrate > maxBit) {
+							maxBit = bitrate;
+							maxId = i;
+						}
+					} else if (res > maxRes) {
+						maxRes = res;
 						maxId = i;
 					}
-				} else if (res > maxRes) {
-					maxRes = res;
-					maxId = i;
+				}
+				if (maxId < 0) {
+					if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
+						if (bitrate > 0 && bitrate < minBit) {
+							minBit = bitrate;
+							minId = i;
+						}
+					} else if (res < minRes) {
+						minRes = res;
+						minId = i;
+					}
 				}
 			}
 			if (maxId < 0) {
-				if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
-					if (bitrate > 0 && bitrate < minBit) {
-						minBit = bitrate;
-						minId = i;
-					}
-				} else if (res < minRes) {
-					minRes = res;
-					minId = i;
-				}
+				maxId = minId;
 			}
-		}
-		if (maxId < 0) {
-			maxId = minId;
-		}
-		return maxId < 0 && tracks.Size() > 0 ? 0 : maxId;
-	}
-
-	int16_t getDefaultTrack(const MediaTrackKind kind) {
-		if (kind == MediaTrackKind::Audio) {
-			return getDefaultAudioTrack(preferredAudioLanguage);
-		} else if (kind == MediaTrackKind::Video) {
-			return getDefaultVideoTrack();
+			return maxId < 0 && tracks.Size() > 0 ? 0 : maxId;
 		} else {
 			int16_t index = -1;
 			auto isSubtitle = kind == MediaTrackKind::TimedMetadata;

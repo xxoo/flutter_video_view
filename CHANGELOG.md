@@ -1,3 +1,6 @@
+## 1.1.7
+- fix a bug on Windows may cause unexpected behavior when calling `setPreferredAudioLanguage()`.
+
 ## 1.1.6
 - fix a bug on Windows may cause unexpected behavior when calling `setMaxResolution()` and `setMaxBitrate()`.
 

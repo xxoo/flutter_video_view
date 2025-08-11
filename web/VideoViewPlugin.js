@@ -1,7 +1,7 @@
 /*!
  * @license
  * https://github.com/xxoo/flutter_video_view/blob/main/web/VideoViewPlugin.js
- * Version: 1.1.6
+ * Version: 1.1.7
  * Copyright 2025 Xiao Shen.
  * Licensed under BSD 2-Clause.
  */
