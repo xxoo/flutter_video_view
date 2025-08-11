@@ -13,6 +13,9 @@
 #include <winrt/Windows.System.UserProfile.h>
 #include <DispatcherQueue.h>
 #include <mutex>
+#include <combaseapi.h>
+#include <wrl/client.h>
+#include <VersionHelpers.h>
 
 #undef max //we want to use std::max
 
@@ -24,6 +27,7 @@ using namespace winrt::Windows::System::UserProfile;
 using namespace winrt::Windows::Media::Core;
 using namespace winrt::Windows::Media::Playback;
 using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
+using namespace Microsoft::WRL;
 
 // Function pointer typedef for CreateDispatcherQueueController
 typedef HRESULT(WINAPI* CreateDispatcherQueueControllerFunc)(
@@ -33,10 +37,11 @@ typedef HRESULT(WINAPI* CreateDispatcherQueueControllerFunc)(
 
 class VideoController : public enable_shared_from_this<VideoController> {
 	static CreateDispatcherQueueControllerFunc CreateDispatcherQueueController;
-	static DispatcherQueueController dispatcherController;
+	static ComPtr<ABI::Windows::System::IDispatcherQueueController> dispatcherController;
 	static DispatcherQueue dispatcherQueue;
 	static ID3D11Device* d3dDevice;
 	static ID3D11DeviceContext* d3dContext;
+	static bool comInitialized;
 
 	static char lower(const char c) {
 		return c >= 'A' && c <= 'Z' ? c + 32 : c;
@@ -96,24 +101,227 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			type = "chapter";
 		} else if (kind == TimedMetadataKind::Subtitle) {
 			type = "subtitle";
-		} else if (kind == TimedMetadataKind::ImageSubtitle) {
-			type = "imageSubtitle";
+		} else {
+			// ImageSubtitle was added in Windows 10 version 1809
+			// We need to check the actual enum value
+			// ImageSubtitle = 7 in the Windows SDK
+			if (static_cast<int>(kind) == 7) {
+				type = "imageSubtitle";
+			} else {
+				type = "unknown";
+			}
 		}
 		return type;
 	}
 
+	// Check Windows version for API compatibility
+	static bool IsWindows1803OrLater() {
+		static bool checked = false;
+		static bool isSupported = false;
+		
+		if (!checked) {
+			// Use more reliable version detection through Windows APIs
+			// First try IsWindows10OrGreater from VersionHelpers.h
+			if (IsWindows10OrGreater()) {
+				// For Windows 10, try to detect 1803+ by checking for specific APIs
+				// Try to load a function that was introduced in 1803
+				HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+				if (hKernel32) {
+					// Check for SetThreadDescription which was added in 1803
+					auto setThreadDesc = GetProcAddress(hKernel32, "SetThreadDescription");
+					if (setThreadDesc) {
+						isSupported = true;
+						OutputDebugStringW(L"VideoViewPlugin: Windows 1803+ detected via SetThreadDescription API\n");
+					} else {
+						OutputDebugStringW(L"VideoViewPlugin: Pre-1803 Windows detected - SetThreadDescription not available\n");
+					}
+				}
+				
+				// Additional check: look for CoreMessaging.dll which contains DispatcherQueue APIs
+				if (!isSupported) {
+					HMODULE hCoreMessaging = LoadLibraryW(L"CoreMessaging.dll");
+					if (hCoreMessaging) {
+						auto createFunc = GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
+						if (createFunc) {
+							isSupported = true;
+							OutputDebugStringW(L"VideoViewPlugin: Windows 1803+ detected via CoreMessaging API\n");
+						}
+						FreeLibrary(hCoreMessaging);
+					}
+				}
+			} else {
+				OutputDebugStringW(L"VideoViewPlugin: Pre-Windows 10 detected\n");
+			}
+			
+			checked = true;
+			OutputDebugStringW(isSupported ? 
+				L"VideoViewPlugin: Full API support available\n" :
+				L"VideoViewPlugin: Using fallback mode for older Windows\n");
+		}
+		
+		return isSupported;
+	}
+
+	// Safe wrapper for RealTimePlayback property
+	static bool SafeGetRealTimePlayback(const MediaPlayer& player) {
+		try {
+			return player.RealTimePlayback();
+		} catch (...) {
+			// Fallback: assume not real-time for older versions
+			OutputDebugStringW(L"VideoViewPlugin: RealTimePlayback property not supported, assuming false\n");
+			return false;
+		}
+	}
+
+	// Safe wrapper for setting RealTimePlayback
+	static void SafeSetRealTimePlayback(MediaPlayer& player, bool value) {
+		try {
+			player.RealTimePlayback(value);
+		} catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: RealTimePlayback property not supported, ignoring\n");
+		}
+	}
+
+	// Safe check for subtitle/caption types (ImageSubtitle may not be available on older Windows)
+	static bool IsSubtitleType(const TimedMetadataKind kind) {
+		// Check for known subtitle types
+		if (kind == TimedMetadataKind::Caption || 
+		    kind == TimedMetadataKind::Subtitle) {
+			return true;
+		}
+		
+		// ImageSubtitle = 7 in Windows SDK (added in 1809)
+		// Check by value instead of enum name to avoid compilation issues
+		if (static_cast<int>(kind) == 7) {
+			return true;
+		}
+		
+		return false;
+	}
+
+	static void SafeEnqueue(DispatcherQueueHandler const& handler) {
+		if (dispatcherQueue) {
+			try {
+				dispatcherQueue.TryEnqueue(handler);
+			}
+			catch (...) {
+				// If TryEnqueue fails, execute immediately
+				try {
+					handler();
+				} catch (...) {
+					OutputDebugStringW(L"VideoViewPlugin: Exception in SafeEnqueue handler execution\n");
+				}
+			}
+		} else {
+			// If no dispatcher queue is available, execute immediately on current thread
+			// This provides fallback behavior for older Windows versions
+			try {
+				handler();
+			} catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Exception in SafeEnqueue fallback execution\n");
+			}
+		}
+	}
+
+	static bool TryCreateDispatcherQueueController() {
+		OutputDebugStringW(L"VideoViewPlugin: Attempting to create DispatcherQueueController\n");
+		
+		// Initialize COM if not already done
+		if (!comInitialized) {
+			HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+			if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
+				comInitialized = true;
+				OutputDebugStringW(L"VideoViewPlugin: COM initialized successfully\n");
+			} else {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to initialize COM\n");
+				return false;
+			}
+		}
+
+		// Dynamically load CoreMessaging.dll
+		HMODULE hCoreMessaging = LoadLibraryW(L"CoreMessaging.dll");
+		if (!hCoreMessaging) {
+			OutputDebugStringW(L"VideoViewPlugin: CoreMessaging.dll not found - running on older Windows version\n");
+			return false;
+		}
+
+		// Get function pointer for CreateDispatcherQueueController
+		CreateDispatcherQueueControllerFunc createFunc = 
+			(CreateDispatcherQueueControllerFunc)GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
+		
+		if (!createFunc) {
+			OutputDebugStringW(L"VideoViewPlugin: CreateDispatcherQueueController function not available\n");
+			FreeLibrary(hCoreMessaging);
+			return false;
+		}
+
+		// Try to create the dispatcher queue controller
+		DispatcherQueueOptions options{
+			sizeof(DispatcherQueueOptions),
+			DQTYPE_THREAD_CURRENT,
+			DQTAT_COM_NONE
+		};
+
+		HRESULT hr = createFunc(options, &dispatcherController);
+		
+		if (SUCCEEDED(hr) && dispatcherController) {
+			// Try to get the DispatcherQueue from the controller
+			// Using the basic IDispatcherQueueController interface instead of IDispatcherQueueController2
+			try {
+				ComPtr<ABI::Windows::System::IDispatcherQueue> queue;
+				hr = dispatcherController->get_DispatcherQueue(&queue);
+				
+				if (SUCCEEDED(hr) && queue) {
+					// Create WinRT wrapper from ABI interface
+					winrt::Windows::System::DispatcherQueue tempQueue{ nullptr };
+					winrt::copy_from_abi(tempQueue, queue.Get());
+					dispatcherQueue = tempQueue;
+					
+					OutputDebugStringW(L"VideoViewPlugin: DispatcherQueueController created successfully\n");
+					FreeLibrary(hCoreMessaging);
+					return true;
+				}
+			}
+			catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Exception while getting DispatcherQueue from controller\n");
+			}
+			
+			// If we failed to get the queue, clean up the controller
+			dispatcherController.Reset();
+		}
+		
+		OutputDebugStringW(L"VideoViewPlugin: Failed to create DispatcherQueueController\n");
+		FreeLibrary(hCoreMessaging);
+		return false;
+	}
+
 	static void createDispatcherQueue() {
-		CreateDispatcherQueueController(
-			DispatcherQueueOptions{
-				sizeof(DispatcherQueueOptions),
-				DQTYPE_THREAD_CURRENT,
-				DQTAT_COM_NONE
-			},
-			//PDISPATCHERQUEUECONTROLLER could be missing in some case, so we use the original type instead
-			reinterpret_cast<ABI::Windows::System::IDispatcherQueueController**>(put_abi(dispatcherController))
-		);
-		if (dispatcherController) {
-			dispatcherQueue = dispatcherController.DispatcherQueue();
+		if (CreateDispatcherQueueController) {
+			// Skip dispatcher queue creation on older Windows versions
+			if (!IsWindows1803OrLater()) {
+				OutputDebugStringW(L"VideoViewPlugin: Skipping DispatcherQueue creation on pre-1803 Windows\n");
+				return;
+			}
+
+			// On Windows 1803+, we can try to use DispatcherQueue
+			// But we need to be careful as even on supported versions, the API might fail
+			try {
+				// Try to get existing dispatcher queue for current thread
+				dispatcherQueue = DispatcherQueue::GetForCurrentThread();
+				if (dispatcherQueue) {
+					OutputDebugStringW(L"VideoViewPlugin: Using existing DispatcherQueue for current thread\n");
+					return;
+				}
+			}
+			catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: DispatcherQueue::GetForCurrentThread() failed or not available\n");
+			}
+
+			// If no existing queue, try to create one
+			if (!TryCreateDispatcherQueueController()) {
+				OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController\n");
+				// The SafeEnqueue function will handle execution on the current thread as fallback
+			}
 		}
 	}
 
@@ -154,6 +362,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				try {
 					auto& surface = isSubtitle ? sharedThis->subtitleSurface : sharedThis->videoSurface;
 					if (!surface || buffer.width != buffer.visible_width || buffer.height != buffer.visible_height) {
+						OutputDebugStringW(L"VideoViewPlugin: Creating new surface/texture\n");
 						buffer.visible_width = buffer.width;
 						buffer.visible_height = buffer.height;
 						D3D11_TEXTURE2D_DESC desc{
@@ -169,31 +378,65 @@ class VideoController : public enable_shared_from_this<VideoController> {
 							D3D11_RESOURCE_MISC_SHARED
 						};
 						com_ptr<ID3D11Texture2D> d3d11Texture;
-						check_hresult(d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put()));
+						HRESULT hr = d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put());
+						if (FAILED(hr)) {
+							OutputDebugStringW(L"VideoViewPlugin: Failed to create D3D11 texture\n");
+							mtx.unlock();
+							return;
+						}
 						//buffer->handle = d3d11Texture.get();
 						if (isSubtitle) {
-							check_hresult(d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put()));
+							hr = d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put());
+							if (FAILED(hr)) {
+								OutputDebugStringW(L"VideoViewPlugin: Failed to create render target view\n");
+							}
 						}
 						com_ptr<IDXGIResource> resource;
 						d3d11Texture.as(resource);
-						check_hresult(resource->GetSharedHandle(&buffer.handle));
+						hr = resource->GetSharedHandle(&buffer.handle);
+						if (FAILED(hr)) {
+							OutputDebugStringW(L"VideoViewPlugin: Failed to get shared handle\n");
+							mtx.unlock();
+							return;
+						}
 						com_ptr<IDXGISurface> dxgiSurface;
 						d3d11Texture.as(dxgiSurface);
 						if (surface) {
 							surface.Close();
 						}
-						check_hresult(CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface))));
+						hr = CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface)));
+						if (FAILED(hr)) {
+							OutputDebugStringW(L"VideoViewPlugin: Failed to create Direct3D11Surface\n");
+							mtx.unlock();
+							return;
+						}
+						OutputDebugStringW(L"VideoViewPlugin: Surface/texture created successfully\n");
 					} else if (isSubtitle) {
 						const float clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
 						d3dContext->ClearRenderTargetView(sharedThis->subtitleRenderTargetView.get(), clearColor);
 					}
-					if (isSubtitle) {
-						sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
+					
+					// Use new APIs only if supported
+					if (IsWindows1803OrLater()) {
+						try {
+							if (isSubtitle) {
+								sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
+							} else {
+								sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
+							}
+						} catch (...) {
+							OutputDebugStringW(L"VideoViewPlugin: Exception in surface rendering API\n");
+							// Don't fall back here - if the API fails, we need to investigate why
+						}
 					} else {
-						sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
+						OutputDebugStringW(L"VideoViewPlugin: Surface rendering not available on this Windows version\n");
 					}
-				} catch(...) { }
+				} catch(...) { 
+					OutputDebugStringW(L"VideoViewPlugin: Exception in drawFrame\n");
+				}
 				mtx.unlock();
+			} else {
+				OutputDebugStringW(L"VideoViewPlugin: Buffer dimensions are zero, skipping frame\n");
 			}
 		}
 	}
@@ -261,7 +504,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		for (uint16_t i = 0; i < tracks.Size(); i++) {
 			auto track = tracks.GetAt(i);
 			auto kind = track.TimedMetadataKind();
-			if ((kind == TimedMetadataKind::Caption || kind == TimedMetadataKind::Subtitle || kind == TimedMetadataKind::ImageSubtitle)) {
+			if (IsSubtitleType(kind)) {
 				if (def < 0) {
 					def = i;
 				}
@@ -346,7 +589,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	void setPosition() {
-		if (!mediaPlayer.RealTimePlayback()) {
+		if (!SafeGetRealTimePlayback(mediaPlayer)) {
 			auto pos = mediaPlayer.PlaybackSession().Position().count() / 10000;
 			if (pos != position) {
 				position = pos;
@@ -372,10 +615,19 @@ class VideoController : public enable_shared_from_this<VideoController> {
 
 	void loadEnd() {
 		if (state == 1) {
+			OutputDebugStringW(L"VideoViewPlugin: Media load completed\n");
 			auto playbackSession = mediaPlayer.PlaybackSession();
 			state = 2;
 			mediaPlayer.Volume(volume);
 			playbackSession.PlaybackRate(speed);
+			
+			// Log video dimensions
+			auto videoWidth = playbackSession.NaturalVideoWidth();
+			auto videoHeight = playbackSession.NaturalVideoHeight();
+			wchar_t debugMsg[256];
+			swprintf_s(debugMsg, L"VideoViewPlugin: Video dimensions: %ux%u\n", videoWidth, videoHeight);
+			OutputDebugStringW(debugMsg);
+			
 			EncodableMap audioTracks{};
 			EncodableMap subtitleTracks{};
 			auto item = mediaPlayer.Source().as<MediaPlaybackItem>();
@@ -385,6 +637,11 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			if (selectedAudioTrackId >= 0 && audiotracks.SelectedIndex() != selectedAudioTrackId) {
 				audiotracks.SelectedIndex(selectedAudioTrackId);
 			}
+			
+			swprintf_s(debugMsg, L"VideoViewPlugin: Found %u audio tracks\n", audiotracks.Size());
+			OutputDebugStringW(debugMsg);
+			
+			// ...existing code for audio tracks...
 			for (uint16_t i = 0; i < audiotracks.Size(); i++) {
 				auto track = audiotracks.GetAt(i);
 				auto props = track.GetEncodingProperties();
@@ -404,10 +661,15 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			}
 			auto subtitletracks = item.TimedMetadataTracks();
 			auto selectedSubtitleTrackId = getDefaultTrack(MediaTrackKind::TimedMetadata);
+			
+			swprintf_s(debugMsg, L"VideoViewPlugin: Found %u subtitle tracks\n", subtitletracks.Size());
+			OutputDebugStringW(debugMsg);
+			
+			// ...existing code for subtitle tracks...
 			for (uint16_t i = 0; i < subtitletracks.Size(); i++) {
 				auto track = subtitletracks.GetAt(i);
 				auto kind = track.TimedMetadataKind();
-				if (kind == TimedMetadataKind::Caption || kind == TimedMetadataKind::Subtitle || kind == TimedMetadataKind::ImageSubtitle) {
+				if (IsSubtitleType(kind)) {
 					if (selectedSubtitleTrackId >= 0) {
 						subtitletracks.SetPresentationMode(i, i == selectedSubtitleTrackId ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
 					}
@@ -424,15 +686,16 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				}
 			}
 			if (eventSink) {
+				OutputDebugStringW(L"VideoViewPlugin: Sending mediaInfo event\n");
 				eventSink->Success(EncodableMap{
 					{ string("event"), string("mediaInfo") },
 					{ string("audioTracks"), audioTracks },
 					{ string("subtitleTracks"), subtitleTracks },
-					{ string("duration"), EncodableValue(mediaPlayer.RealTimePlayback() ? 0 : playbackSession.NaturalDuration().count() / 10000) },
+					{ string("duration"), EncodableValue(SafeGetRealTimePlayback(mediaPlayer) ? 0 : playbackSession.NaturalDuration().count() / 10000) },
 					{ string("source"), source }
 				});
 				setPosition();
-				if (networking && !mediaPlayer.RealTimePlayback() && bufferPosition > position) {
+				if (networking && !SafeGetRealTimePlayback(mediaPlayer) && bufferPosition > position) {
 					sendBuffer(position);
 				}
 			}
@@ -443,54 +706,97 @@ public:
 	static bool supported;
 
 	static void initGlobal() {
-		//init_apartment(apartment_type::single_threaded);
+		OutputDebugStringW(L"VideoViewPlugin: Initializing global resources\n");
+		
+		// Initialize COM first
+		HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+		if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
+			comInitialized = true;
+			OutputDebugStringW(L"VideoViewPlugin: COM initialized in initGlobal\n");
+		}
+
+		// Load CoreMessaging.dll and get function pointer
 		HMODULE hCoreMessaging = LoadLibraryA("CoreMessaging.dll");
 		if (hCoreMessaging) {
 			CreateDispatcherQueueController = (CreateDispatcherQueueControllerFunc)GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
 			if (CreateDispatcherQueueController) {
+				// Try to get existing dispatcher queue for current thread
 				dispatcherQueue = DispatcherQueue::GetForCurrentThread();
 				if (dispatcherQueue) {
 					dispatcherQueue.ShutdownStarting([](auto, DispatcherQueueShutdownStartingEventArgs args) {
 						args.GetDeferral().Complete();
-						dispatcherController = nullptr;
+						dispatcherController.Reset();
 						createDispatcherQueue();
 					});
 				} else {
 					createDispatcherQueue();
 				}
-				if (dispatcherQueue) {
-					D3D_FEATURE_LEVEL featureLevel{};
-					D3D11CreateDevice(
-						nullptr,
-						D3D_DRIVER_TYPE_HARDWARE,
-						nullptr,
-						D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-						nullptr,
-						0,
-						D3D11_SDK_VERSION,
-						&d3dDevice,
-						&featureLevel,
-						&d3dContext
-					);
-					if (d3dDevice && d3dContext) {
-						supported = true;
-					}
-				}
 			}
+		}
+
+		// Initialize D3D11 device
+		D3D_FEATURE_LEVEL featureLevel{};
+		hr = D3D11CreateDevice(
+			nullptr,
+			D3D_DRIVER_TYPE_HARDWARE,
+			nullptr,
+			D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+			nullptr,
+			0,
+			D3D11_SDK_VERSION,
+			&d3dDevice,
+			&featureLevel,
+			&d3dContext
+		);
+		
+		if (SUCCEEDED(hr)) {
+			OutputDebugStringW(L"VideoViewPlugin: D3D11 device created successfully\n");
+			if (d3dDevice && d3dContext && (dispatcherQueue || CreateDispatcherQueueController)) {
+				supported = true;
+			}
+		} else {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to create D3D11 device\n");
 		}
 	}
 
 	static void uninitGlobal() {
+		OutputDebugStringW(L"VideoViewPlugin: Cleaning up global resources\n");
+		
+		// Clean up D3D11 resources
 		if (d3dDevice) {
 			d3dDevice->Release();
+			d3dDevice = nullptr;
+		}
+		if (d3dContext) {
 			d3dContext->Release();
+			d3dContext = nullptr;
 		}
+		
+		// Clean up dispatcher queue controller
 		if (dispatcherController) {
-			dispatcherController.ShutdownQueueAsync();
-			dispatcherController = nullptr;
+			// Try to shutdown the queue gracefully
+			try {
+				ComPtr<ABI::Windows::System::IDispatcherQueue> queue;
+				if (SUCCEEDED(dispatcherController->get_DispatcherQueue(&queue))) {
+					// Note: IDispatcherQueue doesn't have a direct shutdown method in the ABI
+					// The controller will handle cleanup when released
+				}
+			} catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Exception during dispatcher queue cleanup\n");
+			}
+			dispatcherController.Reset();
 		}
+		
 		dispatcherQueue = nullptr;
-		//uninit_apartment();
+		
+		// Uninitialize COM if we initialized it
+		if (comInitialized) {
+			CoUninitialize();
+			comInitialized = false;
+			OutputDebugStringW(L"VideoViewPlugin: COM uninitialized\n");
+		}
+		
+		OutputDebugStringW(L"VideoViewPlugin: Global cleanup completed\n");
 	}
 
 	int64_t textureId = 0;
@@ -502,8 +808,26 @@ public:
 		textureBuffer.release_callback = subTextureBuffer.release_callback = renderingCompleted;
 		textureBuffer.release_context = &videoMutex;
 		subTextureBuffer.release_context = &subtitleMutex;
-		mediaPlayer.IsVideoFrameServerEnabled(true);
-		mediaPlayer.CommandManager().IsEnabled(false);
+		
+		// Enable frame server only if supported
+		if (IsWindows1803OrLater()) {
+			try {
+				mediaPlayer.IsVideoFrameServerEnabled(true);
+				OutputDebugStringW(L"VideoViewPlugin: Video frame server enabled\n");
+			}
+			catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to enable video frame server\n");
+			}
+		} else {
+			OutputDebugStringW(L"VideoViewPlugin: Video frame server not supported on this Windows version\n");
+		}
+		
+		try {
+			mediaPlayer.CommandManager().IsEnabled(false);
+		}
+		catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to disable command manager\n");
+		}
 	}
 
 	~VideoController() {
@@ -530,28 +854,39 @@ public:
 	}
 
 	void init(PluginRegistrarWindows& registrar) {
+		OutputDebugStringW(L"VideoViewPlugin: Initializing VideoController\n");
 		auto weakThis = weak_from_this();
 		textureRegistrar = registrar.texture_registrar();
 		texture = createTextureVariant(weakThis, false);
 		textureId = textureRegistrar->RegisterTexture(texture);
 		subTexture = createTextureVariant(weakThis, true);
 		subtitleId = textureRegistrar->RegisterTexture(subTexture);
-		char id[32];
-		sprintf_s(id, "VideoViewPlugin/%lld", textureId);
+		
+		wchar_t debugMsg[256];
+		swprintf_s(debugMsg, L"VideoViewPlugin: Registered textures - Video: %lld, Subtitle: %lld\n", textureId, subtitleId);
+		OutputDebugStringW(debugMsg);
+		
+		// Create event channel with proper naming
+		char channelName[64];
+		sprintf_s(channelName, "VideoViewPlugin/%lld", textureId);
 		eventChannel = new EventChannel<EncodableValue>(
 			registrar.messenger(),
-			id,
+			channelName,
 			&StandardMethodCodec::GetInstance()
 		);
+		
+		// Set up stream handler
 		eventChannel->SetStreamHandler(make_unique<StreamHandlerFunctions<EncodableValue>>(
-			[weakThis](const EncodableValue* arguments, unique_ptr<EventSink<EncodableValue>>&& events) {
+			[weakThis](const EncodableValue* arguments, unique_ptr<EventSink<EncodableValue>>&& events) -> unique_ptr<StreamHandlerError<EncodableValue>> {
+				OutputDebugStringW(L"VideoViewPlugin: EventChannel stream started\n");
 				auto sharedThis = weakThis.lock();
 				if (sharedThis) {
 					sharedThis->eventSink = move(events);
 				}
 				return nullptr;
 			},
-			[weakThis](const EncodableValue* arguments) {
+			[weakThis](const EncodableValue* arguments) -> unique_ptr<StreamHandlerError<EncodableValue>> {
+				OutputDebugStringW(L"VideoViewPlugin: EventChannel stream cancelled\n");
 				auto sharedThis = weakThis.lock();
 				if (sharedThis) {
 					sharedThis->eventSink = nullptr;
@@ -559,173 +894,204 @@ public:
 				return nullptr;
 			}
 		));
-		auto playbackSession = mediaPlayer.PlaybackSession();
+		
+		// Wrap all event handlers in try-catch to prevent crashes on older Windows
+		try {
+			auto playbackSession = mediaPlayer.PlaybackSession();
 
-		playbackSession.NaturalVideoSizeChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0) {
-					sharedThis->textureBuffer.width = sharedThis->subTextureBuffer.width = playbackSession.NaturalVideoWidth();
-					sharedThis->textureBuffer.height = sharedThis->subTextureBuffer.height = playbackSession.NaturalVideoHeight();
-					if (sharedThis->eventSink) {
-						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("videoSize") },
-							{ string("width"), EncodableValue((double)sharedThis->textureBuffer.width) },
-							{ string("height"), EncodableValue((double)sharedThis->textureBuffer.height) }
-						});
-					}
-				}
-			}));
-		});
-
-		playbackSession.PositionChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 1) {
-					sharedThis->setPosition();
-				}
-			}));
-		});
-
-		playbackSession.SeekCompleted([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->eventSink) {
-					if (sharedThis->state == 1) {
-						sharedThis->loadEnd();
-					} else if (sharedThis->state > 1) {
-						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("seekEnd") }
-						});
-					}
-				}
-			}));
-		});
-
-		playbackSession.BufferingStarted([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
-					sharedThis->eventSink->Success(EncodableMap{
-						{ string("event"), string("loading") },
-						{ string("value"), EncodableValue(true) }
-					});
-				}
-			}));
-		});
-
-		playbackSession.BufferingEnded([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
-					sharedThis->eventSink->Success(EncodableMap{
-						{ string("event"), string("loading") },
-						{ string("value"), EncodableValue(false) }
-					});
-				}
-			}));
-		});
-
-		playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, playbackSession]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !sharedThis->mediaPlayer.RealTimePlayback()) {
-					auto buffered = playbackSession.GetBufferedRanges();
-					for (uint32_t i = 0; i < buffered.Size(); i++) {
-						auto start = buffered.GetAt(i).Start.count();
-						auto end = buffered.GetAt(i).End.count();
-						auto pos = playbackSession.Position().count();
-						if (start <= pos && end >= pos) {
-							auto t = end / 10000;
-							if (sharedThis->bufferPosition != t) {
-								sharedThis->bufferPosition = t;
-								if (sharedThis->state > 1) {
-									sharedThis->sendBuffer(pos / 10000);
-								}
-							}
-							break;
+			playbackSession.NaturalVideoSizeChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
+				SafeEnqueue([weakThis, playbackSession]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 0) {
+						sharedThis->textureBuffer.width = sharedThis->subTextureBuffer.width = playbackSession.NaturalVideoWidth();
+						sharedThis->textureBuffer.height = sharedThis->subTextureBuffer.height = playbackSession.NaturalVideoHeight();
+						
+						wchar_t debugMsg[256];
+						swprintf_s(debugMsg, L"VideoViewPlugin: Video size changed to %zux%zu\n", 
+							sharedThis->textureBuffer.width, sharedThis->textureBuffer.height);
+						OutputDebugStringW(debugMsg);
+						
+						if (sharedThis->eventSink) {
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("videoSize") },
+								{ string("width"), EncodableValue((double)sharedThis->textureBuffer.width) },
+								{ string("height"), EncodableValue((double)sharedThis->textureBuffer.height) }
+							});
 						}
 					}
-				}
-			}));
-		});
+				});
+			});
 
-		mediaPlayer.SubtitleFrameChanged([weakThis](auto, auto) {
-			drawFrame(weakThis, true);
-		});
-
-		mediaPlayer.VideoFrameAvailable([weakThis](auto, auto) {
-			drawFrame(weakThis, false);
-		});
-
-		mediaPlayer.MediaFailed([weakThis](auto, MediaPlayerFailedEventArgs const& reason) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis, reason]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0) {
-					sharedThis->close();
-					if (sharedThis->eventSink) {
-						auto message = "Unknown";
-						auto err = reason.Error();
-						if (err == MediaPlayerError::Aborted) {
-							message = "Aborted";
-						} else if (err == MediaPlayerError::NetworkError) {
-							message = "NetworkError";
-						} else if (err == MediaPlayerError::DecodingError) {
-							message = "DecodingError";
-						} else if (err == MediaPlayerError::SourceNotSupported) {
-							message = "SourceNotSupported";
-						}
-						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("error") },
-							{ string("value"), string(message) }
-						});
+			playbackSession.PositionChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
+				SafeEnqueue([weakThis, playbackSession]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 1) {
+						sharedThis->setPosition();
 					}
-				}
-			}));
-		});
+				});
+			});
 
-		mediaPlayer.MediaOpened([weakThis](auto, auto) {
-			auto sharedThis = weakThis.lock();
-			if (sharedThis && sharedThis->state == 1) {
-				auto playbackSession = sharedThis->mediaPlayer.PlaybackSession();
-				auto live = playbackSession.NaturalDuration().count() == INT64_MAX;
-				sharedThis->mediaPlayer.RealTimePlayback(live);
-				if (live) {
-					dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
-						auto sharedThis = weakThis.lock();
-						if (sharedThis) {
+			playbackSession.SeekCompleted([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->eventSink) {
+						if (sharedThis->state == 1) {
 							sharedThis->loadEnd();
+						} else if (sharedThis->state > 1) {
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("seekEnd") }
+							});
 						}
-					}));
-				} else {
-					playbackSession.Position(chrono::milliseconds(sharedThis->position));
-					sharedThis->position = 0;
-				}
-			}
-		});
-
-		mediaPlayer.MediaEnded([weakThis](auto, auto) {
-			dispatcherQueue.TryEnqueue(DispatcherQueueHandler([weakThis]() {
-				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 2) {
-					if (sharedThis->mediaPlayer.RealTimePlayback()) {
-						sharedThis->close();
-					} else if (sharedThis->looping) {
-						sharedThis->mediaPlayer.Play();
-					} else {
-						sharedThis->state = 2;
 					}
-					if (sharedThis->eventSink) {
+				});
+			});
+
+			playbackSession.BufferingStarted([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
 						sharedThis->eventSink->Success(EncodableMap{
-							{ string("event"), string("finished") }
+							{ string("event"), string("loading") },
+							{ string("value"), EncodableValue(true) }
 						});
 					}
+				});
+			});
+
+			playbackSession.BufferingEnded([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 2 && sharedThis->eventSink) {
+						sharedThis->eventSink->Success(EncodableMap{
+							{ string("event"), string("loading") },
+							{ string("value"), EncodableValue(false) }
+						});
+					}
+				});
+			});
+
+			playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
+				SafeEnqueue([weakThis, playbackSession]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
+						auto buffered = playbackSession.GetBufferedRanges();
+						for (uint32_t i = 0; i < buffered.Size(); i++) {
+							auto start = buffered.GetAt(i).Start.count();
+							auto end = buffered.GetAt(i).End.count();
+							auto pos = playbackSession.Position().count();
+							if (start <= pos && end >= pos) {
+								auto t = end / 10000;
+								if (sharedThis->bufferPosition != t) {
+									sharedThis->bufferPosition = t;
+									if (sharedThis->state > 1) {
+										sharedThis->sendBuffer(pos / 10000);
+									}
+								}
+								break;
+							}
+						}
+					}
+				});
+			});
+		}
+		catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to set up playback session event handlers\n");
+		}
+
+		try {
+			mediaPlayer.MediaFailed([weakThis](auto, MediaPlayerFailedEventArgs const& reason) {
+				SafeEnqueue([weakThis, reason]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 0) {
+						sharedThis->close();
+						if (sharedThis->eventSink) {
+							auto message = "Unknown";
+							auto err = reason.Error();
+							if (err == MediaPlayerError::Aborted) {
+								message = "Aborted";
+							} else if (err == MediaPlayerError::NetworkError) {
+								message = "NetworkError";
+							} else if (err == MediaPlayerError::DecodingError) {
+								message = "DecodingError";
+							} else if (err == MediaPlayerError::SourceNotSupported) {
+								message = "SourceNotSupported";
+							}
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("error") },
+								{ string("value"), string(message) }
+							});
+						}
+					}
+				});
+			});
+
+			mediaPlayer.MediaOpened([weakThis](auto, auto) {
+				auto sharedThis = weakThis.lock();
+				if (sharedThis && sharedThis->state == 1) {
+					auto playbackSession = sharedThis->mediaPlayer.PlaybackSession();
+					auto live = playbackSession.NaturalDuration().count() == INT64_MAX;
+					SafeSetRealTimePlayback(sharedThis->mediaPlayer, live);
+					if (live) {
+						SafeEnqueue([weakThis]() {
+							auto sharedThis = weakThis.lock();
+							if (sharedThis) {
+								sharedThis->loadEnd();
+							}
+						});
+					} else {
+						playbackSession.Position(chrono::milliseconds(sharedThis->position));
+						sharedThis->position = 0;
+					}
 				}
-			}));
-		});
+			});
+
+			mediaPlayer.MediaEnded([weakThis](auto, auto) {
+				SafeEnqueue([weakThis]() {
+					auto sharedThis = weakThis.lock();
+					if (sharedThis && sharedThis->state > 2) {
+						if (SafeGetRealTimePlayback(sharedThis->mediaPlayer)) {
+							sharedThis->close();
+						} else if (sharedThis->looping) {
+							sharedThis->mediaPlayer.Play();
+						} else {
+							sharedThis->state = 2;
+						}
+						if (sharedThis->eventSink) {
+							sharedThis->eventSink->Success(EncodableMap{
+								{ string("event"), string("finished") }
+							});
+						}
+					}
+				});
+			});
+		}
+		catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to set up media event handlers\n");
+		}
+
+		// Add video frame available handler if supported
+		if (IsWindows1803OrLater()) {
+			try {
+				mediaPlayer.VideoFrameAvailable([weakThis](MediaPlayer const&, auto) {
+					drawFrame(weakThis, false);
+				});
+				
+				mediaPlayer.SubtitleFrameChanged([weakThis](MediaPlayer const&, auto) {
+					drawFrame(weakThis, true);
+				});
+				
+				OutputDebugStringW(L"VideoViewPlugin: Video frame handlers registered\n");
+			}
+			catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: Failed to register video frame handlers\n");
+			}
+		} else {
+			OutputDebugStringW(L"VideoViewPlugin: Video frame handlers not supported on this Windows version\n");
+		}
 	}
 
 	void open(const string& src) {
+		OutputDebugStringW(L"VideoViewPlugin: Opening media source\n");
 		close();
 		hstring url;
 		if (src._Starts_with("asset://")) {
@@ -748,7 +1114,20 @@ public:
 		}
 		source = src;
 		state = 1;
-		mediaPlayer.Source(MediaPlaybackItem(MediaSource::CreateFromUri(winrt::Windows::Foundation::Uri(url))));
+		
+		wchar_t debugMsg[256];
+		auto srcWide = to_hstring(src);
+		swprintf_s(debugMsg, L"VideoViewPlugin: Setting media source to: %s\n", srcWide.c_str());
+		OutputDebugStringW(debugMsg);
+		
+		try {
+			mediaPlayer.Source(MediaPlaybackItem(MediaSource::CreateFromUri(winrt::Windows::Foundation::Uri(url))));
+			OutputDebugStringW(L"VideoViewPlugin: Media source set successfully\n");
+		}
+		catch (...) {
+			OutputDebugStringW(L"VideoViewPlugin: Failed to set media source\n");
+			state = 0;
+		}
 	}
 
 	void close() {
@@ -777,8 +1156,13 @@ public:
 
 	void play() {
 		if (state == 2) {
+			OutputDebugStringW(L"VideoViewPlugin: Starting playback\n");
 			state = 3;
 			mediaPlayer.Play();
+		} else {
+			wchar_t debugMsg[256];
+			swprintf_s(debugMsg, L"VideoViewPlugin: Cannot play - current state: %d\n", state);
+			OutputDebugStringW(debugMsg);
 		}
 	}
 
@@ -793,7 +1177,7 @@ public:
 		auto playbackSession = mediaPlayer.PlaybackSession();
 		if (state == 1) {
 			position = pos;
-		} else if (eventSink && (!mediaPlayer.Source() || mediaPlayer.RealTimePlayback() || playbackSession.Position().count() / 10000 == pos)) {
+		} else if (eventSink && (!mediaPlayer.Source() || SafeGetRealTimePlayback(mediaPlayer) || playbackSession.Position().count() / 10000 == pos)) {
 			eventSink->Success(EncodableMap{
 				{ string("event"), string("seekEnd") }
 			});
@@ -867,7 +1251,7 @@ public:
 			auto tracks = mediaPlayer.Source().as<MediaPlaybackItem>().TimedMetadataTracks();
 			for (uint16_t i = 0; i < tracks.Size(); i++) {
 				auto k = tracks.GetAt(i).TimedMetadataKind();
-				if (k == TimedMetadataKind::Caption || k == TimedMetadataKind::Subtitle || k == TimedMetadataKind::ImageSubtitle) {
+				if (IsSubtitleType(k)) {
 					tracks.SetPresentationMode(i, i == j ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
 				}
 			}
@@ -888,7 +1272,7 @@ public:
 				}
 				for (uint16_t i = 0; i < tracks.Size(); i++) {
 					auto k = tracks.GetAt(i).TimedMetadataKind();
-					if (k == TimedMetadataKind::Caption || k == TimedMetadataKind::Subtitle || k == TimedMetadataKind::ImageSubtitle) {
+					if (IsSubtitleType(k)) {
 						tracks.SetPresentationMode(i, i == trackId ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
 					}
 				}
@@ -901,8 +1285,9 @@ auto VideoController::supported = false;
 ID3D11DeviceContext* VideoController::d3dContext = nullptr;
 ID3D11Device* VideoController::d3dDevice = nullptr;
 CreateDispatcherQueueControllerFunc VideoController::CreateDispatcherQueueController = nullptr;
-DispatcherQueueController VideoController::dispatcherController = nullptr;
-DispatcherQueue VideoController::dispatcherQueue = nullptr;
+ComPtr<ABI::Windows::System::IDispatcherQueueController> VideoController::dispatcherController;
+DispatcherQueue VideoController::dispatcherQueue{ nullptr };
+bool VideoController::comInitialized = false;
 
 class VideoViewPlugin : public Plugin {
 	MethodChannel<EncodableValue>* methodChannel;
