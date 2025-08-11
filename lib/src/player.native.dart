@@ -56,7 +56,11 @@ class VideoController extends VideoControllerInterface {
       );
     }
     _methodChannel.invokeMethod('create').then((value) {
-      if (disposed) {
+      if (value is! Map) {
+        if (!disposed) {
+          error.value = 'unsupported';
+        }
+      } else if (disposed) {
         _methodChannel.invokeMethod('dispose', value['id']);
       } else {
         _subId = value['subId'];

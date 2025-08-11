@@ -36,10 +36,11 @@ typedef HRESULT(WINAPI* CreateDispatcherQueueControllerFunc)(
 );
 
 class VideoController : public enable_shared_from_this<VideoController> {
-	static ID3D11Device* d3dDevice;
-	static ID3D11DeviceContext* d3dContext;
+	static CreateDispatcherQueueControllerFunc CreateDispatcherQueueController;
 	static ComPtr<ABI::Windows::System::IDispatcherQueueController> dispatcherController;
 	static DispatcherQueue dispatcherQueue;
+	static ID3D11Device* d3dDevice;
+	static ID3D11DeviceContext* d3dContext;
 	static bool comInitialized;
 
 	static char lower(const char c) {
@@ -295,30 +296,32 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	static void createDispatcherQueue() {
-		// Skip dispatcher queue creation on older Windows versions
-		if (!IsWindows1803OrLater()) {
-			OutputDebugStringW(L"VideoViewPlugin: Skipping DispatcherQueue creation on pre-1803 Windows\n");
-			return;
-		}
-
-		// On Windows 1803+, we can try to use DispatcherQueue
-		// But we need to be careful as even on supported versions, the API might fail
-		try {
-			// Try to get existing dispatcher queue for current thread
-			dispatcherQueue = DispatcherQueue::GetForCurrentThread();
-			if (dispatcherQueue) {
-				OutputDebugStringW(L"VideoViewPlugin: Using existing DispatcherQueue for current thread\n");
+		if (CreateDispatcherQueueController) {
+			// Skip dispatcher queue creation on older Windows versions
+			if (!IsWindows1803OrLater()) {
+				OutputDebugStringW(L"VideoViewPlugin: Skipping DispatcherQueue creation on pre-1803 Windows\n");
 				return;
 			}
-		}
-		catch (...) {
-			OutputDebugStringW(L"VideoViewPlugin: DispatcherQueue::GetForCurrentThread() failed or not available\n");
-		}
 
-		// If no existing queue, try to create one
-		if (!TryCreateDispatcherQueueController()) {
-			OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController\n");
-			// The SafeEnqueue function will handle execution on the current thread as fallback
+			// On Windows 1803+, we can try to use DispatcherQueue
+			// But we need to be careful as even on supported versions, the API might fail
+			try {
+				// Try to get existing dispatcher queue for current thread
+				dispatcherQueue = DispatcherQueue::GetForCurrentThread();
+				if (dispatcherQueue) {
+					OutputDebugStringW(L"VideoViewPlugin: Using existing DispatcherQueue for current thread\n");
+					return;
+				}
+			}
+			catch (...) {
+				OutputDebugStringW(L"VideoViewPlugin: DispatcherQueue::GetForCurrentThread() failed or not available\n");
+			}
+
+			// If no existing queue, try to create one
+			if (!TryCreateDispatcherQueueController()) {
+				OutputDebugStringW(L"VideoViewPlugin: Running without DispatcherQueueController\n");
+				// The SafeEnqueue function will handle execution on the current thread as fallback
+			}
 		}
 	}
 
@@ -330,10 +333,12 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && (!isSubtitle || sharedThis->showSubtitle)) {
 					auto& buffer = isSubtitle ? sharedThis->subTextureBuffer : sharedThis->textureBuffer;
+					auto& mtx = isSubtitle ? sharedThis->subtitleMutex : sharedThis->videoMutex;
+					mtx.lock();
 					if (buffer.visible_width > 0 && buffer.visible_height > 0) {
-						auto& mtx = isSubtitle ? sharedThis->subtitleMutex : sharedThis->videoMutex;
-						mtx.lock();
 						return &buffer;
+					} else {
+						mtx.unlock();
 					}
 				}
 				return nullptr;
@@ -354,76 +359,80 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				sharedThis->textureRegistrar->MarkTextureFrameAvailable(isSubtitle ? sharedThis->subtitleId : sharedThis->textureId);
 				auto& mtx = isSubtitle ? sharedThis->subtitleMutex : sharedThis->videoMutex;
 				mtx.lock();
-				auto& surface = isSubtitle ? sharedThis->subtitleSurface : sharedThis->videoSurface;
-				if (!surface || buffer.width != buffer.visible_width || buffer.height != buffer.visible_height) {
-					OutputDebugStringW(L"VideoViewPlugin: Creating new surface/texture\n");
-					buffer.visible_width = buffer.width;
-					buffer.visible_height = buffer.height;
-					D3D11_TEXTURE2D_DESC desc{
-						(UINT)buffer.width,
-						(UINT)buffer.height,
-						1,
-						1,
-						DXGI_FORMAT_B8G8R8A8_UNORM,
-						{ 1, DXGI_STANDARD_MULTISAMPLE_QUALITY_PATTERN },
-						D3D11_USAGE_DEFAULT,
-						D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
-						0,
-						D3D11_RESOURCE_MISC_SHARED
-					};
-					com_ptr<ID3D11Texture2D> d3d11Texture;
-					HRESULT hr = d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put());
-					if (FAILED(hr)) {
-						OutputDebugStringW(L"VideoViewPlugin: Failed to create D3D11 texture\n");
-						mtx.unlock();
-						return;
-					}
-					//buffer->handle = d3d11Texture.get();
-					if (isSubtitle) {
-						hr = d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put());
+				try {
+					auto& surface = isSubtitle ? sharedThis->subtitleSurface : sharedThis->videoSurface;
+					if (!surface || buffer.width != buffer.visible_width || buffer.height != buffer.visible_height) {
+						OutputDebugStringW(L"VideoViewPlugin: Creating new surface/texture\n");
+						buffer.visible_width = buffer.width;
+						buffer.visible_height = buffer.height;
+						D3D11_TEXTURE2D_DESC desc{
+							(UINT)buffer.width,
+							(UINT)buffer.height,
+							1,
+							1,
+							DXGI_FORMAT_B8G8R8A8_UNORM,
+							{ 1, DXGI_STANDARD_MULTISAMPLE_QUALITY_PATTERN },
+							D3D11_USAGE_DEFAULT,
+							D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
+							0,
+							D3D11_RESOURCE_MISC_SHARED
+						};
+						com_ptr<ID3D11Texture2D> d3d11Texture;
+						HRESULT hr = d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put());
 						if (FAILED(hr)) {
-							OutputDebugStringW(L"VideoViewPlugin: Failed to create render target view\n");
+							OutputDebugStringW(L"VideoViewPlugin: Failed to create D3D11 texture\n");
+							mtx.unlock();
+							return;
 						}
-					}
-					com_ptr<IDXGIResource> resource;
-					d3d11Texture.as(resource);
-					hr = resource->GetSharedHandle(&buffer.handle);
-					if (FAILED(hr)) {
-						OutputDebugStringW(L"VideoViewPlugin: Failed to get shared handle\n");
-						mtx.unlock();
-						return;
-					}
-					com_ptr<IDXGISurface> dxgiSurface;
-					d3d11Texture.as(dxgiSurface);
-					if (surface) {
-						surface.Close();
-					}
-					hr = CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface)));
-					if (FAILED(hr)) {
-						OutputDebugStringW(L"VideoViewPlugin: Failed to create Direct3D11Surface\n");
-						mtx.unlock();
-						return;
-					}
-					OutputDebugStringW(L"VideoViewPlugin: Surface/texture created successfully\n");
-				} else if (isSubtitle) {
-					const float clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
-					d3dContext->ClearRenderTargetView(sharedThis->subtitleRenderTargetView.get(), clearColor);
-				}
-				
-				// Use new APIs only if supported
-				if (IsWindows1803OrLater()) {
-					try {
+						//buffer->handle = d3d11Texture.get();
 						if (isSubtitle) {
-							sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
-						} else {
-							sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
+							hr = d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put());
+							if (FAILED(hr)) {
+								OutputDebugStringW(L"VideoViewPlugin: Failed to create render target view\n");
+							}
 						}
-					} catch (...) {
-						OutputDebugStringW(L"VideoViewPlugin: Exception in surface rendering API\n");
-						// Don't fall back here - if the API fails, we need to investigate why
+						com_ptr<IDXGIResource> resource;
+						d3d11Texture.as(resource);
+						hr = resource->GetSharedHandle(&buffer.handle);
+						if (FAILED(hr)) {
+							OutputDebugStringW(L"VideoViewPlugin: Failed to get shared handle\n");
+							mtx.unlock();
+							return;
+						}
+						com_ptr<IDXGISurface> dxgiSurface;
+						d3d11Texture.as(dxgiSurface);
+						if (surface) {
+							surface.Close();
+						}
+						hr = CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface)));
+						if (FAILED(hr)) {
+							OutputDebugStringW(L"VideoViewPlugin: Failed to create Direct3D11Surface\n");
+							mtx.unlock();
+							return;
+						}
+						OutputDebugStringW(L"VideoViewPlugin: Surface/texture created successfully\n");
+					} else if (isSubtitle) {
+						const float clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
+						d3dContext->ClearRenderTargetView(sharedThis->subtitleRenderTargetView.get(), clearColor);
 					}
-				} else {
-					OutputDebugStringW(L"VideoViewPlugin: Surface rendering not available on this Windows version\n");
+					
+					// Use new APIs only if supported
+					if (IsWindows1803OrLater()) {
+						try {
+							if (isSubtitle) {
+								sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
+							} else {
+								sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
+							}
+						} catch (...) {
+							OutputDebugStringW(L"VideoViewPlugin: Exception in surface rendering API\n");
+							// Don't fall back here - if the API fails, we need to investigate why
+						}
+					} else {
+						OutputDebugStringW(L"VideoViewPlugin: Surface rendering not available on this Windows version\n");
+					}
+				} catch(...) { 
+					OutputDebugStringW(L"VideoViewPlugin: Exception in drawFrame\n");
 				}
 				mtx.unlock();
 			} else {
@@ -517,52 +526,48 @@ class VideoController : public enable_shared_from_this<VideoController> {
 		return max(getBestMatch(lang1, lang2), def);
 	}
 
-	int16_t getDefaultVideoTrack() {
-		auto tracks = mediaPlayer.Source().as<MediaPlaybackItem>().VideoTracks();
-		uint32_t maxRes = 0;
-		uint32_t maxBit = 0;
-		int16_t maxId = -1;
-		uint32_t minRes = UINT32_MAX;
-		uint32_t minBit = UINT32_MAX;
-		int16_t minId = -1;
-		for (uint16_t i = 0; i < tracks.Size(); i++) {
-			auto props = tracks.GetAt(i).GetEncodingProperties();
-			auto bitrate = props.Bitrate();
-			auto width = props.Width();
-			auto height = props.Height();
-			uint32_t res = width * height;
-			if ((maxVideoWidth == 0 || width == 0 || width <= maxVideoWidth) && (maxVideoHeight == 0 || height == 0 || height <= maxVideoHeight) && (maxBitrate == 0 || bitrate == 0 || bitrate <= maxBitrate)) {
-				if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
-					if (bitrate > 0 && bitrate > maxBit) {
-						maxBit = bitrate;
+	int16_t getDefaultTrack(const MediaTrackKind kind) {
+		if (kind == MediaTrackKind::Video) {
+			auto tracks = mediaPlayer.Source().as<MediaPlaybackItem>().VideoTracks();
+			uint32_t maxRes = 0;
+			uint32_t maxBit = 0;
+			int16_t maxId = -1;
+			uint32_t minRes = UINT32_MAX;
+			uint32_t minBit = UINT32_MAX;
+			int16_t minId = -1;
+			for (uint16_t i = 0; i < tracks.Size(); i++) {
+				auto props = tracks.GetAt(i).GetEncodingProperties();
+				auto bitrate = props.Bitrate();
+				auto width = props.Width();
+				auto height = props.Height();
+				uint32_t res = width * height;
+				if ((maxVideoWidth == 0 || width == 0 || width <= maxVideoWidth) && (maxVideoHeight == 0 || height == 0 || height <= maxVideoHeight) && (maxBitrate == 0 || bitrate == 0 || bitrate <= maxBitrate)) {
+					if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
+						if (bitrate > 0 && bitrate > maxBit) {
+							maxBit = bitrate;
+							maxId = i;
+						}
+					} else if (res > maxRes) {
+						maxRes = res;
 						maxId = i;
 					}
-				} else if (res > maxRes) {
-					maxRes = res;
-					maxId = i;
+				}
+				if (maxId < 0) {
+					if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
+						if (bitrate > 0 && bitrate < minBit) {
+							minBit = bitrate;
+							minId = i;
+						}
+					} else if (res < minRes) {
+						minRes = res;
+						minId = i;
+					}
 				}
 			}
 			if (maxId < 0) {
-				if (maxVideoHeight == 0 && maxVideoWidth == 0 && maxBitrate > 0) {
-					if (bitrate > 0 && bitrate < minBit) {
-						minBit = bitrate;
-						minId = i;
-					}
-				} else if (res < minRes) {
-					minRes = res;
-					minId = i;
-				}
+				maxId = minId;
 			}
-		}
-		if (maxId < 0) {
-			maxId = minId;
-		}
-		return maxId < 0 && tracks.Size() > 0 ? 0 : maxId;
-	}
-
-	int16_t getDefaultTrack(const MediaTrackKind kind) {
-		if (kind == MediaTrackKind::Video) {
-			return getDefaultVideoTrack(); // Fix: call getDefaultVideoTrack, not getDefaultAudioTrack
+			return maxId < 0 && tracks.Size() > 0 ? 0 : maxId;
 		} else {
 			int16_t index = -1;
 			auto isSubtitle = kind == MediaTrackKind::TimedMetadata;
@@ -698,6 +703,8 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 public:
+	static bool supported;
+
 	static void initGlobal() {
 		OutputDebugStringW(L"VideoViewPlugin: Initializing global resources\n");
 		
@@ -708,8 +715,24 @@ public:
 			OutputDebugStringW(L"VideoViewPlugin: COM initialized in initGlobal\n");
 		}
 
-		// Try to create or get dispatcher queue
-		createDispatcherQueue();
+		// Load CoreMessaging.dll and get function pointer
+		HMODULE hCoreMessaging = LoadLibraryA("CoreMessaging.dll");
+		if (hCoreMessaging) {
+			CreateDispatcherQueueController = (CreateDispatcherQueueControllerFunc)GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
+			if (CreateDispatcherQueueController) {
+				// Try to get existing dispatcher queue for current thread
+				dispatcherQueue = DispatcherQueue::GetForCurrentThread();
+				if (dispatcherQueue) {
+					dispatcherQueue.ShutdownStarting([](auto, DispatcherQueueShutdownStartingEventArgs args) {
+						args.GetDeferral().Complete();
+						dispatcherController.Reset();
+						createDispatcherQueue();
+					});
+				} else {
+					createDispatcherQueue();
+				}
+			}
+		}
 
 		// Initialize D3D11 device
 		D3D_FEATURE_LEVEL featureLevel{};
@@ -728,6 +751,9 @@ public:
 		
 		if (SUCCEEDED(hr)) {
 			OutputDebugStringW(L"VideoViewPlugin: D3D11 device created successfully\n");
+			if (d3dDevice && d3dContext && (dispatcherQueue || CreateDispatcherQueueController)) {
+				supported = true;
+			}
 		} else {
 			OutputDebugStringW(L"VideoViewPlugin: Failed to create D3D11 device\n");
 		}
@@ -832,8 +858,8 @@ public:
 		auto weakThis = weak_from_this();
 		textureRegistrar = registrar.texture_registrar();
 		texture = createTextureVariant(weakThis, false);
-		subTexture = createTextureVariant(weakThis, true);
 		textureId = textureRegistrar->RegisterTexture(texture);
+		subTexture = createTextureVariant(weakThis, true);
 		subtitleId = textureRegistrar->RegisterTexture(subTexture);
 		
 		wchar_t debugMsg[256];
@@ -1255,8 +1281,10 @@ public:
 		}
 	}
 };
+auto VideoController::supported = false;
 ID3D11DeviceContext* VideoController::d3dContext = nullptr;
 ID3D11Device* VideoController::d3dDevice = nullptr;
+CreateDispatcherQueueControllerFunc VideoController::CreateDispatcherQueueController = nullptr;
 ComPtr<ABI::Windows::System::IDispatcherQueueController> VideoController::dispatcherController;
 DispatcherQueue VideoController::dispatcherQueue{ nullptr };
 bool VideoController::comInitialized = false;
@@ -1280,14 +1308,16 @@ public:
 			auto returned = false;
 			auto& methodName = call.method_name();
 			if (methodName == "create") {
-				auto player = make_shared<VideoController>();
-				player->init(registrar);
-				players[player->textureId] = player;
-				result->Success(EncodableMap{
-					{ string("id"), EncodableValue(player->textureId) },
-					{ string("subId"), EncodableValue(player->subtitleId) }
-				});
-				returned = true;
+				if (VideoController::supported) {
+					auto player = make_shared<VideoController>();
+					player->init(registrar);
+					players[player->textureId] = player;
+					result->Success(EncodableMap{
+						{ string("id"), EncodableValue(player->textureId) },
+						{ string("subId"), EncodableValue(player->subtitleId) }
+					});
+					returned = true;
+				}
 			} else if (methodName == "dispose") {
 				if (call.arguments()->IsNull()) {
 					players.clear();
