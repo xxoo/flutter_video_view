@@ -25,11 +25,18 @@ using namespace winrt::Windows::Media::Core;
 using namespace winrt::Windows::Media::Playback;
 using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
 
+// Function pointer typedef for CreateDispatcherQueueController
+typedef HRESULT(WINAPI* CreateDispatcherQueueControllerFunc)(
+	DispatcherQueueOptions options,
+	ABI::Windows::System::IDispatcherQueueController** dispatcherQueueController
+);
+
 class VideoController : public enable_shared_from_this<VideoController> {
-	static ID3D11Device* d3dDevice;
-	static ID3D11DeviceContext* d3dContext;
+	static CreateDispatcherQueueControllerFunc CreateDispatcherQueueController;
 	static DispatcherQueueController dispatcherController;
 	static DispatcherQueue dispatcherQueue;
+	static ID3D11Device* d3dDevice;
+	static ID3D11DeviceContext* d3dContext;
 
 	static char lower(const char c) {
 		return c >= 'A' && c <= 'Z' ? c + 32 : c;
@@ -96,7 +103,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	static void createDispatcherQueue() {
-		check_hresult(CreateDispatcherQueueController(
+		CreateDispatcherQueueController(
 			DispatcherQueueOptions{
 				sizeof(DispatcherQueueOptions),
 				DQTYPE_THREAD_CURRENT,
@@ -104,8 +111,10 @@ class VideoController : public enable_shared_from_this<VideoController> {
 			},
 			//PDISPATCHERQUEUECONTROLLER could be missing in some case, so we use the original type instead
 			reinterpret_cast<ABI::Windows::System::IDispatcherQueueController**>(put_abi(dispatcherController))
-		));
-		dispatcherQueue = dispatcherController.DispatcherQueue();
+		);
+		if (dispatcherController) {
+			dispatcherQueue = dispatcherController.DispatcherQueue();
+		}
 	}
 
 	static TextureVariant* createTextureVariant(weak_ptr<VideoController> weakThis, const bool isSubtitle) {
@@ -116,10 +125,12 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && (!isSubtitle || sharedThis->showSubtitle)) {
 					auto& buffer = isSubtitle ? sharedThis->subTextureBuffer : sharedThis->textureBuffer;
+					auto& mtx = isSubtitle ? sharedThis->subtitleMutex : sharedThis->videoMutex;
+					mtx.lock();
 					if (buffer.visible_width > 0 && buffer.visible_height > 0) {
-						auto& mtx = isSubtitle ? sharedThis->subtitleMutex : sharedThis->videoMutex;
-						mtx.lock();
 						return &buffer;
+					} else {
+						mtx.unlock();
 					}
 				}
 				return nullptr;
@@ -140,46 +151,48 @@ class VideoController : public enable_shared_from_this<VideoController> {
 				sharedThis->textureRegistrar->MarkTextureFrameAvailable(isSubtitle ? sharedThis->subtitleId : sharedThis->textureId);
 				auto& mtx = isSubtitle ? sharedThis->subtitleMutex : sharedThis->videoMutex;
 				mtx.lock();
-				auto& surface = isSubtitle ? sharedThis->subtitleSurface : sharedThis->videoSurface;
-				if (!surface || buffer.width != buffer.visible_width || buffer.height != buffer.visible_height) {
-					buffer.visible_width = buffer.width;
-					buffer.visible_height = buffer.height;
-					D3D11_TEXTURE2D_DESC desc{
-						(UINT)buffer.width,
-						(UINT)buffer.height,
-						1,
-						1,
-						DXGI_FORMAT_B8G8R8A8_UNORM,
-						{ 1, DXGI_STANDARD_MULTISAMPLE_QUALITY_PATTERN },
-						D3D11_USAGE_DEFAULT,
-						D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
-						0,
-						D3D11_RESOURCE_MISC_SHARED
-					};
-					com_ptr<ID3D11Texture2D> d3d11Texture;
-					check_hresult(d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put()));
-					//buffer->handle = d3d11Texture.get();
+				try {
+					auto& surface = isSubtitle ? sharedThis->subtitleSurface : sharedThis->videoSurface;
+					if (!surface || buffer.width != buffer.visible_width || buffer.height != buffer.visible_height) {
+						buffer.visible_width = buffer.width;
+						buffer.visible_height = buffer.height;
+						D3D11_TEXTURE2D_DESC desc{
+							(UINT)buffer.width,
+							(UINT)buffer.height,
+							1,
+							1,
+							DXGI_FORMAT_B8G8R8A8_UNORM,
+							{ 1, DXGI_STANDARD_MULTISAMPLE_QUALITY_PATTERN },
+							D3D11_USAGE_DEFAULT,
+							D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
+							0,
+							D3D11_RESOURCE_MISC_SHARED
+						};
+						com_ptr<ID3D11Texture2D> d3d11Texture;
+						check_hresult(d3dDevice->CreateTexture2D(&desc, nullptr, d3d11Texture.put()));
+						//buffer->handle = d3d11Texture.get();
+						if (isSubtitle) {
+							check_hresult(d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put()));
+						}
+						com_ptr<IDXGIResource> resource;
+						d3d11Texture.as(resource);
+						check_hresult(resource->GetSharedHandle(&buffer.handle));
+						com_ptr<IDXGISurface> dxgiSurface;
+						d3d11Texture.as(dxgiSurface);
+						if (surface) {
+							surface.Close();
+						}
+						check_hresult(CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface))));
+					} else if (isSubtitle) {
+						const float clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
+						d3dContext->ClearRenderTargetView(sharedThis->subtitleRenderTargetView.get(), clearColor);
+					}
 					if (isSubtitle) {
-						check_hresult(d3dDevice->CreateRenderTargetView(d3d11Texture.get(), nullptr, sharedThis->subtitleRenderTargetView.put()));
+						sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
+					} else {
+						sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
 					}
-					com_ptr<IDXGIResource> resource;
-					d3d11Texture.as(resource);
-					check_hresult(resource->GetSharedHandle(&buffer.handle));
-					com_ptr<IDXGISurface> dxgiSurface;
-					d3d11Texture.as(dxgiSurface);
-					if (surface) {
-						surface.Close();
-					}
-					check_hresult(CreateDirect3D11SurfaceFromDXGISurface(dxgiSurface.get(), reinterpret_cast<IInspectable**>(put_abi(surface))));
-				} else if (isSubtitle) {
-					const float clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
-					d3dContext->ClearRenderTargetView(sharedThis->subtitleRenderTargetView.get(), clearColor);
-				}
-				if (isSubtitle) {
-					sharedThis->mediaPlayer.RenderSubtitlesToSurface(surface);
-				} else {
-					sharedThis->mediaPlayer.CopyFrameToVideoSurface(surface);
-				}
+				} catch(...) { }
 				mtx.unlock();
 			}
 		}
@@ -314,7 +327,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	int16_t getDefaultTrack(const MediaTrackKind kind) {
-		if (kind == MediaTrackKind::Video) {
+		if (kind == MediaTrackKind::Audio) {
 			return getDefaultAudioTrack(preferredAudioLanguage);
 		} else {
 			int16_t index = -1;
@@ -431,30 +444,44 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 public:
+	static bool supported;
+
 	static void initGlobal() {
 		//init_apartment(apartment_type::single_threaded);
-		dispatcherQueue = DispatcherQueue::GetForCurrentThread();
-		if (dispatcherQueue) {
-			dispatcherQueue.ShutdownStarting([](auto, DispatcherQueueShutdownStartingEventArgs args) {
-				args.GetDeferral().Complete();
-				createDispatcherQueue();
-			});
-		} else {
-			createDispatcherQueue();
+		HMODULE hCoreMessaging = LoadLibraryA("CoreMessaging.dll");
+		if (hCoreMessaging) {
+			CreateDispatcherQueueController = (CreateDispatcherQueueControllerFunc)GetProcAddress(hCoreMessaging, "CreateDispatcherQueueController");
+			if (CreateDispatcherQueueController) {
+				dispatcherQueue = DispatcherQueue::GetForCurrentThread();
+				if (dispatcherQueue) {
+					dispatcherQueue.ShutdownStarting([](auto, DispatcherQueueShutdownStartingEventArgs args) {
+						args.GetDeferral().Complete();
+						dispatcherController = nullptr;
+						createDispatcherQueue();
+					});
+				} else {
+					createDispatcherQueue();
+				}
+				if (dispatcherQueue) {
+					D3D_FEATURE_LEVEL featureLevel{};
+					D3D11CreateDevice(
+						nullptr,
+						D3D_DRIVER_TYPE_HARDWARE,
+						nullptr,
+						D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+						nullptr,
+						0,
+						D3D11_SDK_VERSION,
+						&d3dDevice,
+						&featureLevel,
+						&d3dContext
+					);
+					if (d3dDevice && d3dContext) {
+						supported = true;
+					}
+				}
+			}
 		}
-		D3D_FEATURE_LEVEL featureLevel{};
-		check_hresult(D3D11CreateDevice(
-			nullptr,
-			D3D_DRIVER_TYPE_HARDWARE,
-			nullptr,
-			D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-			nullptr,
-			0,
-			D3D11_SDK_VERSION,
-			&d3dDevice,
-			&featureLevel,
-			&d3dContext
-		));
 	}
 
 	static void uninitGlobal() {
@@ -510,8 +537,8 @@ public:
 		auto weakThis = weak_from_this();
 		textureRegistrar = registrar.texture_registrar();
 		texture = createTextureVariant(weakThis, false);
-		subTexture = createTextureVariant(weakThis, true);
 		textureId = textureRegistrar->RegisterTexture(texture);
+		subTexture = createTextureVariant(weakThis, true);
 		subtitleId = textureRegistrar->RegisterTexture(subTexture);
 		char id[32];
 		sprintf_s(id, "VideoViewPlugin/%lld", textureId);
@@ -874,10 +901,12 @@ public:
 		}
 	}
 };
+auto VideoController::supported = false;
 ID3D11DeviceContext* VideoController::d3dContext = nullptr;
 ID3D11Device* VideoController::d3dDevice = nullptr;
-DispatcherQueueController VideoController::dispatcherController{ nullptr };
-DispatcherQueue VideoController::dispatcherQueue{ nullptr };
+CreateDispatcherQueueControllerFunc VideoController::CreateDispatcherQueueController = nullptr;
+DispatcherQueueController VideoController::dispatcherController = nullptr;
+DispatcherQueue VideoController::dispatcherQueue = nullptr;
 
 class VideoViewPlugin : public Plugin {
 	MethodChannel<EncodableValue>* methodChannel;
@@ -898,14 +927,16 @@ public:
 			auto returned = false;
 			auto& methodName = call.method_name();
 			if (methodName == "create") {
-				auto player = make_shared<VideoController>();
-				player->init(registrar);
-				players[player->textureId] = player;
-				result->Success(EncodableMap{
-					{ string("id"), EncodableValue(player->textureId) },
-					{ string("subId"), EncodableValue(player->subtitleId) }
-				});
-				returned = true;
+				if (VideoController::supported) {
+					auto player = make_shared<VideoController>();
+					player->init(registrar);
+					players[player->textureId] = player;
+					result->Success(EncodableMap{
+						{ string("id"), EncodableValue(player->textureId) },
+						{ string("subId"), EncodableValue(player->subtitleId) }
+					});
+					returned = true;
+				}
 			} else if (methodName == "dispose") {
 				if (call.arguments()->IsNull()) {
 					players.clear();

@@ -1,5 +1,6 @@
 ## 1.1.5
 - no longer set `showSubtitle` to `true` automatically while calling `setOverrideSubtitle()` on Web platforms to keep the behavior consistent with other platforms.
+- no longer crash on unsupported Windows (win10 redstone 2 or earlier).
 
 ## 1.1.4
 - gl context initialization on Linux is now moved to open method of `VideoController` class. which means you may listen `error` event for `gl context not available` message and retry as needed. `VideoController` will not automatically retry anymore.
