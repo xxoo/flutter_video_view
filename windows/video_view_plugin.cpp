@@ -361,13 +361,11 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	void sendBuffer(int64_t pos) {
-		if (eventSink) {
-			eventSink->Success(EncodableMap{
-				{ string("event"), string("buffer") },
-				{ string("start"), EncodableValue(pos) },
-				{ string("end"), EncodableValue(bufferPosition) }
-			});
-		}
+		eventSink->Success(EncodableMap{
+			{ string("event"), string("buffer") },
+			{ string("start"), EncodableValue(pos) },
+			{ string("end"), EncodableValue(bufferPosition) }
+		});
 	}
 
 	void loadEnd() {
@@ -639,7 +637,7 @@ public:
 							auto t = end / 10000;
 							if (sharedThis->bufferPosition != t) {
 								sharedThis->bufferPosition = t;
-								if (sharedThis->state > 1) {
+								if (sharedThis->state > 1 && sharedThis->eventSink) {
 									sharedThis->sendBuffer(pos / 10000);
 								}
 							}

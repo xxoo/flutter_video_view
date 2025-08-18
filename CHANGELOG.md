@@ -1,3 +1,7 @@
+## 1.1.8
+- support mpv v0.4.x on Linux.
+- fix error handling while opening media files on Web platforms.
+
 ## 1.1.7
 - fix a bug on Windows may cause unexpected behavior when calling `setPreferredAudioLanguage()`.
 

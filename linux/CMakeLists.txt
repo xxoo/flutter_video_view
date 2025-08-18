@@ -11,17 +11,18 @@ add_library(${PLUGIN_NAME} SHARED
 
 apply_standard_settings(${PLUGIN_NAME})
 pkg_check_modules(mpv REQUIRED IMPORTED_TARGET mpv)
+pkg_check_modules(icuuc REQUIRED IMPORTED_TARGET icu-uc)
 
-set_target_properties(${PLUGIN_NAME} PROPERTIES CXX_VISIBILITY_PRESET hidden)
 target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
-
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
+
 target_link_libraries(${PLUGIN_NAME} PRIVATE
   flutter
   PkgConfig::GTK
   PkgConfig::mpv
+  PkgConfig::icuuc
 )
 
 set(video_view_bundled_libraries

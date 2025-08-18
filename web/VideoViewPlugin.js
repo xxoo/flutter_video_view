@@ -1,7 +1,7 @@
 /*!
  * @license
  * https://github.com/xxoo/flutter_video_view/blob/main/web/VideoViewPlugin.js
- * Version: 1.1.7
+ * Version: 1.1.8
  * Copyright 2025 Xiao Shen.
  * Licensed under BSD 2-Clause.
  */
@@ -102,7 +102,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	 */
 	#state = 0;
 
-	/** @type {function(object):void} */
+	/** @type {function(Object):void} */
 	#sendMessage;
 
 	/** @type {HTMLVideoElement?} */
@@ -349,7 +349,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 
 	/**
 	 * sendMessage: callback function from dart side
-	 * @param {function(object):void} sendMessage 
+	 * @param {function(Object):void} sendMessage 
 	 */
 	constructor(sendMessage) {
 		this.#sendMessage = sendMessage;
@@ -607,8 +607,8 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 					if (this.#state > 1 && this.#source === source) {
 						let id = -1,
 							candidate = -1;
-						const textTracks = this.#dom.textTracks;
-						const defaultTrack = this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2) : this.#overrideSubtitleTrack;
+						const textTracks = this.#dom.textTracks,
+							defaultTrack = this.#overrideSubtitleTrack < 0 ? this.#getDefaultTrack(2) : this.#overrideSubtitleTrack;
 						for (let i = 0; i < textTracks.length; i++) {
 							if (textTracks[i].mode === 'showing' && VideoViewPlugin.#isSubtitle(textTracks[i])) {
 								const trackId = VideoViewPlugin.#getTrackId(textTracks, i);
@@ -707,26 +707,30 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			}
 		}
 		if (this.#shaka) {
-			this.#configureShaka();
-			this.#shaka.addEventListener('error', evt => {
-				if (this.#state > 0 && evt.detail.severity === shaka.util.Error.Severity.CRITICAL) {
-					let categoryName = 'UNKNOWN';
-					let codeName = 'UNKNOWN';
-					for (const k in shaka.util.Error.Category) {
-						if (shaka.util.Error.Category[k] === evt.detail.category) {
-							categoryName = k;
+			/** @param {shaka.util.Error} err */
+			const sendError = err => {
+				if (this.#state > 0 && err.severity === shaka.util.Error.Severity.CRITICAL) {
+					const result = [];
+					for (const n of ['Category', 'Code']) {
+						const i = result.length,
+							v = err[n.toLowerCase()];
+						for (const k in shaka.util.Error[n]) {
+							if (shaka.util.Error[n][k] === v) {
+								result.push(k);
+								break;
+							}
+						}
+						if (result.length === i) {
+							result.push(v);
 						}
 					}
-					for (const k in shaka.util.Error.Code) {
-						if (shaka.util.Error.Code[k] === evt.detail.code) {
-							codeName = k;
-						}
-					}
-					this.#sendError(`${categoryName}.${codeName}`);
+					this.#sendError(`${result.join('.')}`);
 				}
-			});
+			};
+			this.#configureShaka();
+			this.#shaka.addEventListener('error', evt => sendError(evt.detail));
 			this.#shaka.attach(this.#dom);
-			this.#shaka.load(url, null, cType);
+			this.#shaka.load(url, null, cType).catch(sendError);
 		} else {
 			if (cType) {
 				const src = document.createElement('source');

@@ -59,6 +59,7 @@ class VideoController extends VideoControllerInterface {
       if (value is! Map) {
         if (!disposed) {
           error.value = 'unsupported';
+          loading.value = false;
         }
       } else if (disposed) {
         _methodChannel.invokeMethod('dispose', value['id']);

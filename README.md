@@ -41,13 +41,13 @@ ___
 
 ### Platform support
 
-| **Platform** | **Version** | **Backend**                                                                           |
-| ------------ | ----------- | ------------------------------------------------------------------------------------- |
-| Android      | 6+          | [ExoPlayer](https://developer.android.com/media/media3/exoplayer)                     |
-| iOS          | 15+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/)          |
-| macOS        | 12+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/)          |
-| Windows      | 10+         | [MediaPlayer](https://learn.microsoft.com/uwp/api/windows.media.playback.mediaplayer) |
-| Linux        | N/A         | [libmpv](https://github.com/mpv-player/mpv/tree/master/include/mpv)[^libmpv]          |
+| **Platform** | **Version** | **Backend**                                                                  |
+| ------------ | ----------- | ---------------------------------------------------------------------------- |
+| Android      | 6+          | [ExoPlayer](https://developer.android.com/media/media3/exoplayer)            |
+| iOS          | 15+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/) |
+| macOS        | 12+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/) |
+| Windows | 10+ | [MediaPlayer](https://learn.microsoft.com/uwp/api/windows.media.playback.mediaplayer)[^mediaplayer] |
+| Linux        | N/A         | [mpv](https://github.com/mpv-player/mpv/tree/master/include/mpv)[^mpv]       |
 | Web | Chrome 84+ / Safari 15+ / Firefox 90+ | [\<video>](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/video), [ShakaPlayer](https://shaka-player-demo.appspot.com/docs/api/shaka.Player.html)[^shaka] |
 ___
 
@@ -90,8 +90,9 @@ final example2 = 'https://example.com/video.m3u8#.mpd';
 ```
 
 [^subtitle]: Only internal subtitle tracks are supported.
-[^libmpv]: `video_view` requires `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `libmpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
-[^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) v4.15 or higher to enable HLS, DASH, MSS support on web platforms.
+[^mediaplayer]: `MediaPlayer` may lead to crash on certain Windows builds when rendering subtitles.
+[^mpv]: `video_view` requires `mpv`(v0.4+) or `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `mpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
+[^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) v4.15+ to enable HLS, DASH, MSS support on web platforms.
 [^h265]: Windows user may need to install a free [H.265 decoder](https://apps.microsoft.com/detail/9n4wgh0z6vhq) from Microsoft Store. Web platforms may lack H.265 support except for Apple webkit.
 [^apple]: Apple platforms may lack WebM and AV1 support.
 [^vtt]: WebVTT subtitles within HLS are not supported by Linux backend.

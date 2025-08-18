@@ -16,7 +16,6 @@ typedef struct {
 	mpv_opengl_fbo fbo;
 	mpv_handle* mpv;
 	mpv_render_context* mpvRenderContext;
-	FlTextureRegistrar* textureRegistrar;
 	FlEventChannel* eventChannel;
 	gchar* source;
 	int64_t id;
@@ -43,30 +42,20 @@ typedef struct {
 	bool seeking;
 	uint8_t state; // 0: idle, 1: opening, 2: paused, 3: playing
 } VideoController;
-#define MEDIAPLAYER(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), video_controller_get_type(), VideoController))
+#define VIDEO_CONTROLLER(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), video_controller_get_type(), VideoController))
 typedef struct {
 	FlTextureGLClass parent_class;
 } VideoControllerClass;
 G_DEFINE_TYPE(VideoController, video_controller, fl_texture_gl_get_type())
 
-/* plugin class */
+/* plugin definitions */
 
-typedef struct {
-	GObject parent_instance;
-	FlMethodCodec* codec;
-	FlBinaryMessenger* messenger;
-	FlTextureRegistrar* textureRegistrar;
-	FlMethodChannel* methodChannel;
-	GTree* players; // all write operations on the tree are done in the main thread
-	GMutex mutex;   // so we just need to lock the mutex when reading in other threads
-} VideoViewPlugin;
-#define MEDIAPLAYER_PLUGIN(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), video_view_plugin_get_type(), VideoViewPlugin))
-typedef struct {
-	GObjectClass parent_class;
-} VideoViewPluginClass;
-G_DEFINE_TYPE(VideoViewPlugin, video_view_plugin, g_object_get_type())
-
-static VideoViewPlugin* plugin;
+static GTree* players; // all write operations on the tree are done in the main thread
+static GMutex mutex;   // so we just need to lock the mutex when reading in other threads
+static FlBinaryMessenger* messenger;
+static FlTextureRegistrar* textureRegistrar;
+static FlMethodCodec* codec;
+static FlMethodChannel* methodChannel;
 
 /* player implementation */
 
@@ -262,7 +251,7 @@ static void video_controller_send_time(const VideoController* self) {
 	fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
 }
 
-static void video_controller_send_buffer(VideoController* self, int64_t position) {
+static void video_controller_send_buffer(const VideoController* self, int64_t position) {
 	g_autoptr(FlValue) evt = fl_value_new_map();
 	fl_value_set_string_take(evt, "event", fl_value_new_string("buffer"));
 	fl_value_set_string_take(evt, "start", fl_value_new_int(position));
@@ -388,13 +377,13 @@ static void* video_controller_gl_init(void* addrCtx, const char* name) {
 }
 
 static void video_controller_texture_update_callback(void* id) {
-	// this function is not called in the main thread
-	g_mutex_lock(&plugin->mutex);
-	VideoController* self = g_tree_lookup(plugin->players, id);
-	g_mutex_unlock(&plugin->mutex);
+	// this function may be called from mpv event thread, so we need to lock the mutex
+	g_mutex_lock(&mutex);
+	VideoController* self = g_tree_lookup(players, id);
 	if (self) {
-		fl_texture_registrar_mark_texture_frame_available(self->textureRegistrar, FL_TEXTURE(self));
+		fl_texture_registrar_mark_texture_frame_available(textureRegistrar, FL_TEXTURE(self));
 	}
+	g_mutex_unlock(&mutex);
 }
 
 static void video_controller_close(VideoController* self) {
@@ -578,7 +567,7 @@ static void video_controller_overrideTrack(VideoController* self, const uint8_t 
 }
 
 static gboolean video_controller_event_callback(void* id) {
-	VideoController* self = g_tree_lookup(plugin->players, id);
+	VideoController* self = g_tree_lookup(players, id);
 	while (self) {
 		const mpv_event* event = mpv_wait_event(self->mpv, 0);
 		if (event->event_id == MPV_EVENT_NONE) {
@@ -682,7 +671,7 @@ static void video_controller_wakeup_callback(void* id) {
 }
 
 static gboolean video_controller_texture_populate(FlTextureGL* texture, uint32_t* target, uint32_t* name, uint32_t* width, uint32_t* height, GError** error) {
-	VideoController* self = MEDIAPLAYER(texture);
+	VideoController* self = VIDEO_CONTROLLER(texture);
 	if (self->state > 0 && self->width > 0 && self->height > 0) {
 		if (self->texture == 0 || self->width != self->fbo.w || self->height != self->fbo.h) {
 			if (self->texture) {
@@ -705,7 +694,7 @@ static gboolean video_controller_texture_populate(FlTextureGL* texture, uint32_t
 		}
 		mpv_render_param params[] = {
 			{ MPV_RENDER_PARAM_OPENGL_FBO, &self->fbo },
-			{ MPV_RENDER_PARAM_INVALID, NULL },
+			{ MPV_RENDER_PARAM_INVALID, NULL }
 		};
 		mpv_render_context_render(self->mpvRenderContext, params);
 		*target = GL_TEXTURE_2D;
@@ -737,11 +726,10 @@ static void video_controller_init(VideoController* self) {
 	self->mpvRenderContext = NULL;
 }
 
-static VideoController* video_controller_new(FlMethodCodec* codec, FlBinaryMessenger* messenger, FlTextureRegistrar* textureRegistrar) {
-	VideoController* self = MEDIAPLAYER(g_object_new(video_controller_get_type(), NULL));
+static VideoController* video_controller_new() {
+	VideoController* self = VIDEO_CONTROLLER(g_object_new(video_controller_get_type(), NULL));
 	FlTexture* texture = FL_TEXTURE(self);
-	self->textureRegistrar = textureRegistrar;
-	fl_texture_registrar_register_texture(self->textureRegistrar, texture);
+	fl_texture_registrar_register_texture(textureRegistrar, texture);
 	self->id = fl_texture_get_id(texture);
 	gchar* name = g_strdup_printf("VideoViewPlugin/%ld", self->id);
 	self->eventChannel = fl_event_channel_new(messenger, name, codec);
@@ -752,9 +740,8 @@ static VideoController* video_controller_new(FlMethodCodec* codec, FlBinaryMesse
 	self->subtitleTracks = g_array_new(FALSE, FALSE, sizeof(VideoControllerTrack));
 	g_array_set_clear_func(self->audioTracks, video_controller_track_free);
 	g_array_set_clear_func(self->subtitleTracks, video_controller_track_free);
-	video_controller_set_volume(self, 1);
-	//mpv_set_option_string(self->mpv, "terminal", "yes");
-	//mpv_set_option_string(self->mpv, "msg-level", "all=v");
+	video_controller_set_volume(self, 1.0);
+	video_controller_set_show_subtitle(self, false);
 	mpv_set_property_string(self->mpv, "vo", "libmpv");
 	mpv_set_property_string(self->mpv, "hwdec", "auto-safe");
 	mpv_set_property_string(self->mpv, "keep-open", "yes");
@@ -762,7 +749,8 @@ static VideoController* video_controller_new(FlMethodCodec* codec, FlBinaryMesse
 	mpv_set_property_string(self->mpv, "framedrop", "yes");
 	//mpv_set_property_string(self->mpv, "sub-create-cc-track", "yes");
 	//mpv_set_property_string(self->mpv, "cache", "no");
-	video_controller_set_show_subtitle(self, false);
+	//mpv_set_option_string(self->mpv, "terminal", "yes");
+	//mpv_set_option_string(self->mpv, "msg-level", "all=v");
 	mpv_initialize(self->mpv);
 	mpv_observe_property(self->mpv, 0, "time-pos/full", MPV_FORMAT_DOUBLE);
 	mpv_observe_property(self->mpv, 0, "demuxer-cache-time", MPV_FORMAT_DOUBLE);
@@ -774,11 +762,15 @@ static VideoController* video_controller_new(FlMethodCodec* codec, FlBinaryMesse
 
 static void video_controller_destroy(void* obj) {
 	VideoController* self = obj;
-	fl_texture_registrar_unregister_texture(self->textureRegistrar, FL_TEXTURE(self));
-	g_idle_remove_by_data(self);
+	fl_texture_registrar_unregister_texture(textureRegistrar, FL_TEXTURE(self));
+	g_idle_remove_by_data((void*)self->id);
 	//fl_event_channel_send_end_of_stream(self->eventChannel, NULL, NULL);
 	g_object_unref(self->eventChannel);
-	mpv_render_context_free(self->mpvRenderContext);
+	if (self->mpvRenderContext) {
+		mpv_render_context_set_update_callback(self->mpvRenderContext, NULL, NULL);
+		mpv_render_context_free(self->mpvRenderContext);
+	}
+	mpv_set_wakeup_callback(self->mpv, NULL, NULL);
 	mpv_destroy(self->mpv);
 	g_free(self->source);
 	g_free(self->preferredAudioLanguage);
@@ -816,112 +808,99 @@ static gboolean video_view_plugin_remove_player(void* key, void* value, void* tr
 	return FALSE;
 }
 
-static void video_view_plugin_clear(VideoViewPlugin* self) {
-	g_mutex_lock(&self->mutex);
-	g_tree_foreach(self->players, video_view_plugin_remove_player, self->players);
-	g_mutex_unlock(&self->mutex);
+static void video_view_plugin_clear() {
+	g_mutex_lock(&mutex);
+	g_tree_foreach(players, video_view_plugin_remove_player, players);
+	g_mutex_unlock(&mutex);
 }
 
-static void video_view_plugin_dispose(GObject* object) {
-	VideoViewPlugin* self = MEDIAPLAYER_PLUGIN(object);
-	video_view_plugin_clear(self);
-	g_object_unref(self->methodChannel);
-	g_object_unref(self->codec);
-	g_tree_destroy(self->players);
-	G_OBJECT_CLASS(video_view_plugin_parent_class)->dispose(object);
+static void video_view_plugin_destroy(void* data) {
+	video_view_plugin_clear();
+	g_object_unref(methodChannel);
+	g_object_unref(codec);
+	g_mutex_clear(&mutex);
+	g_tree_destroy(players);
 }
 
-static void video_view_plugin_class_init(VideoViewPluginClass* klass) {
-	G_OBJECT_CLASS(klass)->dispose = video_view_plugin_dispose;
-}
-
-static void video_view_plugin_init(VideoViewPlugin* self) {
-	self->codec = FL_METHOD_CODEC(fl_standard_method_codec_new());
-	self->players = g_tree_new_full(video_view_plugin_compare_key, NULL, NULL, video_controller_destroy);
-	g_mutex_init(&self->mutex);
-	printf("mutex init: %p\n", &self->mutex);
-}
-
-static VideoController* video_view_plugin_get_player(VideoViewPlugin* self, FlValue* args, bool isMap) {
+static VideoController* video_view_plugin_get_player(FlValue* args, const bool isMap) {
 	const int64_t id = fl_value_get_int(isMap ? fl_value_lookup_string(args, "id") : args);
-	return g_tree_lookup(self->players, (void*)id);
+	return g_tree_lookup(players, (void*)id);
 }
 
 static void video_view_plugin_method_call(FlMethodChannel* channel, FlMethodCall* method_call, void* user_data) {
-	VideoViewPlugin* self = user_data;
 	const gchar* method = fl_method_call_get_name(method_call);
 	FlValue* args = fl_method_call_get_args(method_call);
 	g_autoptr(FlMethodResponse) response = NULL;
 	if (g_str_equal(method, "create")) {
-		VideoController* player = video_controller_new(self->codec, self->messenger, self->textureRegistrar);
-		g_mutex_lock(&self->mutex);
-		g_tree_insert(self->players, (void*)player->id, player);
-		g_mutex_unlock(&self->mutex);
+		VideoController* player = video_controller_new();
+		g_mutex_lock(&mutex);
+		g_tree_insert(players, (void*)player->id, player);
+		g_mutex_unlock(&mutex);
 		g_autoptr(FlValue) result = fl_value_new_map();
 		fl_value_set_string_take(result, "id", fl_value_new_int(player->id));
 		response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
 	} else if (g_str_equal(method, "dispose")) {
 		if (fl_value_get_type(args) == FL_VALUE_TYPE_NULL) {
-			video_view_plugin_clear(self);
+			video_view_plugin_clear();
 		} else {
 			const int64_t id = fl_value_get_int(args);
-			g_mutex_lock(&self->mutex);
-			g_tree_remove(self->players, (void*)id);
-			g_mutex_unlock(&self->mutex);
+			g_mutex_lock(&mutex);
+			g_tree_remove(players, (void*)id);
+			g_mutex_unlock(&mutex);
 		}
 	} else if (g_str_equal(method, "open")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const gchar* value = fl_value_get_string(fl_value_lookup_string(args, "value"));
 		video_controller_open(player, value);
 	} else if (g_str_equal(method, "close")) {
-		VideoController* player = video_view_plugin_get_player(self, args, false);
+		VideoController* player = video_view_plugin_get_player(args, false);
 		video_controller_close(player);
 	} else if (g_str_equal(method, "play")) {
-		VideoController* player = video_view_plugin_get_player(self, args, false);
+		VideoController* player = video_view_plugin_get_player(args, false);
 		video_controller_play(player);
 	} else if (g_str_equal(method, "pause")) {
-		VideoController* player = video_view_plugin_get_player(self, args, false);
+		VideoController* player = video_view_plugin_get_player(args, false);
 		video_controller_pause(player);
 	} else if (g_str_equal(method, "seekTo")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const int64_t position = fl_value_get_int(fl_value_lookup_string(args, "position"));
 		const bool fast = fl_value_get_bool(fl_value_lookup_string(args, "fast"));
 		video_controller_seek_to(player, position, fast);
 	} else if (g_str_equal(method, "setVolume")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const double value = fl_value_get_float(fl_value_lookup_string(args, "value"));
 		video_controller_set_volume(player, value);
 	} else if (g_str_equal(method, "setSpeed")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const double value = fl_value_get_float(fl_value_lookup_string(args, "value"));
 		video_controller_set_speed(player, value);
 	} else if (g_str_equal(method, "setLooping")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const bool value = fl_value_get_bool(fl_value_lookup_string(args, "value"));
 		video_controller_set_looping(player, value);
 	} else if (g_str_equal(method, "setPreferredAudioLanguage")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const gchar* value = fl_value_get_string(fl_value_lookup_string(args, "value"));
 		video_controller_set_preferred_audio_language(player, value[0] == 0 ? NULL : value);
 	} else if (g_str_equal(method, "setPreferredSubtitleLanguage")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const gchar* value = fl_value_get_string(fl_value_lookup_string(args, "value"));
 		video_controller_set_preferred_subtitle_language(player, value[0] == 0 ? NULL : value);
 	} else if (g_str_equal(method, "setMaxBitRate")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const uint32_t value = fl_value_get_int(fl_value_lookup_string(args, "value"));
 		video_controller_set_max_bitrate(player, value);
 	} else if (g_str_equal(method, "setMaxResolution")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
-		const uint16_t width = fl_value_get_float(fl_value_lookup_string(args, "width"));
-		const uint16_t height = fl_value_get_float(fl_value_lookup_string(args, "height"));
+		VideoController* player = video_view_plugin_get_player(args, true);
+		const uint16_t width = (uint16_t)fl_value_get_float(fl_value_lookup_string(args, "width"));
+		const uint16_t height = (uint16_t)fl_value_get_float(fl_value_lookup_string(args, "height"));
 		video_controller_set_max_resolution(player, width, height);
 	} else if (g_str_equal(method, "setShowSubtitle")) {
-		const VideoController* player = video_view_plugin_get_player(self, args, true);
+		const VideoController* player = video_view_plugin_get_player(args, true);
 		const bool value = fl_value_get_bool(fl_value_lookup_string(args, "value"));
 		video_controller_set_show_subtitle(player, value);
 	} else if (g_str_equal(method, "overrideTrack")) {
-		VideoController* player = video_view_plugin_get_player(self, args, true);
+		VideoController* player = video_view_plugin_get_player(args, true);
 		const uint8_t typeId = fl_value_get_int(fl_value_lookup_string(args, "groupId"));
 		const uint16_t trackId = fl_value_get_int(fl_value_lookup_string(args, "trackId"));
 		const bool enabled = fl_value_get_bool(fl_value_lookup_string(args, "enabled"));
@@ -940,9 +919,11 @@ static void video_view_plugin_method_call(FlMethodChannel* channel, FlMethodCall
 
 void video_view_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
 	setlocale(LC_NUMERIC, "C");
-	plugin = MEDIAPLAYER_PLUGIN(g_object_new(video_view_plugin_get_type(), NULL));
-	plugin->messenger = fl_plugin_registrar_get_messenger(registrar);
-	plugin->textureRegistrar = fl_plugin_registrar_get_texture_registrar(registrar);
-	plugin->methodChannel = fl_method_channel_new(plugin->messenger, "VideoViewPlugin", plugin->codec);
-	fl_method_channel_set_method_call_handler(plugin->methodChannel, video_view_plugin_method_call, plugin, g_object_unref);
+	g_mutex_init(&mutex);
+	players = g_tree_new_full(video_view_plugin_compare_key, NULL, NULL, video_controller_destroy);
+	messenger = fl_plugin_registrar_get_messenger(registrar);
+	textureRegistrar = fl_plugin_registrar_get_texture_registrar(registrar);
+	codec = FL_METHOD_CODEC(fl_standard_method_codec_new());
+	methodChannel = fl_method_channel_new(messenger, "VideoViewPlugin", codec);
+	fl_method_channel_set_method_call_handler(methodChannel, video_view_plugin_method_call, NULL, video_view_plugin_destroy);
 }

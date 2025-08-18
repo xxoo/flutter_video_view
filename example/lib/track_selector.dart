@@ -32,6 +32,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
     _player.overrideSubtitle.addListener(_update);
     _player.videoSize.addListener(_update);
     _player.loading.addListener(_update);
+    _player.error.addListener(_update);
     _player.mediaInfo.addListener(
       () => setState(() {
         if (_player.mediaInfo.value != null) {
@@ -39,11 +40,6 @@ class _TrackSelectorViewState extends State<TrackSelector> {
         }
       }),
     );
-    _player.error.addListener(() {
-      if (_player.error.value != null) {
-        debugPrint('Error: ${_player.error.value}');
-      }
-    });
     _player.bufferRange.addListener(() {
       if (_player.bufferRange.value != VideoControllerBufferRange.empty) {
         debugPrint(

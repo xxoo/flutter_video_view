@@ -52,13 +52,9 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
     _player.mediaInfo.addListener(_update);
     _player.videoSize.addListener(_update);
     _player.loading.addListener(_update);
+    _player.error.addListener(_update);
     _player.looping.addListener(_update);
     _player.autoPlay.addListener(_update);
-    _player.error.addListener(() {
-      if (_player.error.value != null) {
-        debugPrint('Error: ${_player.error.value}');
-      }
-    });
     _player.bufferRange.addListener(() {
       if (_player.bufferRange.value != VideoControllerBufferRange.empty) {
         debugPrint(
