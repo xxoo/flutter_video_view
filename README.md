@@ -1,4 +1,4 @@
-<center><img src="logo.svg" alt="video_view" width="128" /></center>
+<p align="center"><img src="logo.svg" alt="video_view" width="128" /></p>
 
 `video_view` is a lightweight media player with subtitle rendering[^subtitle] and audio track switching support, leveraging system or app-level components for seamless playback.
 For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
