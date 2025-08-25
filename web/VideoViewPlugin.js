@@ -6,7 +6,7 @@
  * Licensed under BSD 2-Clause.
  */
 globalThis.VideoViewPlugin = class VideoViewPlugin {
-	static version = '1.2.0';
+	static version = '1.2.1';
 	/** @type {Map<number, VideoViewPlugin>} */
 	static #instances = new Map();
 	static #nextId = 0;
@@ -930,7 +930,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				m = s.match(/^(.{2})(.{6})$/); // argb to rgba
 			this.#dom.style.backgroundColor = `#${m[2]}${m[1]}`;
 		}
-		if (typeof objectFit !== 'string') {
+		if (typeof objectFit === 'string') {
 			if (objectFit === 'scaleDown') {
 				objectFit = 'scale-down';
 			}

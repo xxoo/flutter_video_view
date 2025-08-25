@@ -1,3 +1,6 @@
+# 1.2.1
+- fix a bug may cause `objectFit` not working as expected.
+
 # 1.2.0
 - **breaking change:** use `async_value_notifier` package for state management which avoids synchronous listener re‑entrancy corrupting sequential logic and supplies advanced options for notification.
 - add `VideoViewPlugin.js` version check.
