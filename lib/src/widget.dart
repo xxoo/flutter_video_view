@@ -1,8 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:set_state_async/set_state_async.dart';
-import 'player.common.dart';
-import 'player.native.dart' if (dart.library.js_interop) 'player.web.dart';
+import 'player.dart';
 import 'widget.native.dart' if (dart.library.js_interop) 'widget.web.dart';
 
 /// The widget to display video for [VideoController].
@@ -23,6 +21,8 @@ class VideoView extends StatefulWidget {
   final int? maxBitRate;
   final Size? maxResolution;
   final void Function(VideoController)? onCreated;
+  final bool? cancelableNotification;
+  final bool? distinctNotification;
   final double width;
   final double height;
   final Color backgroundColor;
@@ -54,6 +54,8 @@ class VideoView extends StatefulWidget {
     this.maxBitRate,
     this.maxResolution,
     this.onCreated,
+    this.cancelableNotification,
+    this.distinctNotification,
     this.backgroundColor = Colors.black,
     this.videoFit = BoxFit.contain,
     this.width = double.infinity,
@@ -61,12 +63,12 @@ class VideoView extends StatefulWidget {
   });
 
   @override
-  createState() => _VideoControllerState();
+  createState() => _VideoViewState();
 }
 
-class _VideoControllerState extends State<VideoView> with SetStateAsync {
+class _VideoViewState extends State<VideoView> {
   late final VideoController _controller;
-  bool _foreignController = false;
+  var _foreignController = false;
   // This is a workaround for the fullscreen issue on web.
   OverlayEntry? _overlayEntry;
 
@@ -91,6 +93,39 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
     _overlayEntry = null;
   }
 
+  void _update() => setState(() {});
+
+  @pragma('vm:notify-debugger-on-exception')
+  void _runOnCreated() {
+    if (widget.onCreated != null) {
+      try {
+        widget.onCreated!(_controller);
+      } catch (e, s) {
+        if (!kDebugMode) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: e,
+              stack: s,
+              library: 'video_view',
+              informationCollector: () => <DiagnosticsNode>[
+                DiagnosticsProperty<void Function(VideoController)>(
+                  'onCreate',
+                  widget.onCreated!,
+                ),
+                DiagnosticsProperty<VideoController>(
+                  'VideoController',
+                  _controller,
+                ),
+                DiagnosticsProperty<VideoView>('VideoView', widget),
+                DiagnosticsProperty<State>('State', this),
+              ],
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   initState() {
     super.initState();
@@ -107,51 +142,31 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
         preferredAudioLanguage: widget.preferredAudioLanguage,
         maxBitRate: widget.maxBitRate,
         maxResolution: widget.maxResolution,
+        cancelableNotification: widget.cancelableNotification,
+        distinctNotification: widget.distinctNotification,
       );
     } else {
-      _controller = widget.controller!;
       _foreignController = true;
-      if (widget.source != null) {
-        _controller.open(widget.source!);
-      }
-      if (widget.autoPlay != null) {
-        _controller.setAutoPlay(widget.autoPlay!);
-      }
-      if (widget.looping != null) {
-        _controller.setLooping(widget.looping!);
-      }
-      if (widget.volume != null) {
-        _controller.setVolume(widget.volume!);
-      }
-      if (widget.speed != null) {
-        _controller.setSpeed(widget.speed!);
-      }
-      if (widget.position != null) {
-        _controller.seekTo(widget.position!);
-      }
-      if (widget.showSubtitle != null) {
-        _controller.setShowSubtitle(widget.showSubtitle!);
-      }
-      if (widget.preferredSubtitleLanguage != null) {
-        _controller.setPreferredSubtitleLanguage(
-          widget.preferredSubtitleLanguage!,
-        );
-      }
-      if (widget.preferredAudioLanguage != null) {
-        _controller.setPreferredAudioLanguage(widget.preferredAudioLanguage!);
-      }
-      if (widget.maxBitRate != null) {
-        _controller.setMaxBitRate(widget.maxBitRate!);
-      }
-      if (widget.maxResolution != null) {
-        _controller.setMaxResolution(widget.maxResolution!);
-      }
+      _controller = widget.controller!;
+      _controller.initialize(
+        source: widget.source,
+        autoPlay: widget.autoPlay,
+        looping: widget.looping,
+        volume: widget.volume,
+        speed: widget.speed,
+        position: widget.position,
+        showSubtitle: widget.showSubtitle,
+        preferredSubtitleLanguage: widget.preferredSubtitleLanguage,
+        preferredAudioLanguage: widget.preferredAudioLanguage,
+        maxBitRate: widget.maxBitRate,
+        maxResolution: widget.maxResolution,
+        cancelableNotification: widget.cancelableNotification,
+        distinctNotification: widget.distinctNotification,
+      );
     }
-    if (widget.onCreated != null) {
-      widget.onCreated!(_controller);
-    }
-    _controller.videoSize.addListener(setStateAsync);
-    _controller.showSubtitle.addListener(setStateAsync);
+    _runOnCreated();
+    _controller.videoSize.addListener(_update);
+    _controller.showSubtitle.addListener(_update);
     if (kIsWeb) {
       _controller.displayMode.addListener(_fullscreenChange);
     }
@@ -162,8 +177,8 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
     if (!_foreignController) {
       _controller.dispose();
     } else if (!_controller.disposed) {
-      _controller.videoSize.removeListener(setStateAsync);
-      _controller.showSubtitle.removeListener(setStateAsync);
+      _controller.videoSize.removeListener(_update);
+      _controller.showSubtitle.removeListener(_update);
       if (kIsWeb) {
         _controller.displayMode.removeListener(_fullscreenChange);
         _clearOverlay();
@@ -177,7 +192,7 @@ class _VideoControllerState extends State<VideoView> with SetStateAsync {
     width: widget.width,
     height: widget.height,
     color: widget.backgroundColor,
-    child: _controller.videoSize.value == Size.zero
+    child: _controller.disposed || _controller.videoSize.value == Size.zero
         ? null
         : makeWidget(_controller, widget.videoFit, widget.backgroundColor),
   );

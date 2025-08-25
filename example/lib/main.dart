@@ -26,10 +26,10 @@ class _MyAppState extends State<MyApp> {
             'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8',
         autoPlay: true,
         looping: true,
-        onCreated:
-            (player) => player.loading.addListener(
-              () => setState(() => _loading = player.loading.value),
-            ),
+        cancelableNotification: true,
+        onCreated: (player) => player.loading.addListener(
+          () => setState(() => _loading = player.loading.value),
+        ),
       ),
       if (_loading) const CircularProgressIndicator(),
     ],

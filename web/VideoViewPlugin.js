@@ -1,11 +1,15 @@
+'use strict';
 /*!
  * @license
  * https://github.com/xxoo/flutter_video_view/blob/main/web/VideoViewPlugin.js
- * Version: 1.1.8
  * Copyright 2025 Xiao Shen.
  * Licensed under BSD 2-Clause.
  */
 globalThis.VideoViewPlugin = class VideoViewPlugin {
+	static version = '1.2.0';
+	/** @type {Map<number, VideoViewPlugin>} */
+	static #instances = new Map();
+	static #nextId = 0;
 	static #isApple = navigator.vendor.startsWith('Apple');
 
 	static #hasMSE = typeof ManagedMediaSource === 'function' || typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function';
@@ -14,6 +18,11 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		capture: true,
 		passive: true
 	};
+
+	/** @param {number} id */
+	static getInstance(id) {
+		return this.#instances.get(id);
+	}
 
 	/** @param {TextTrack} track */
 	static #isSubtitle = track => ['subtitles', 'captions', 'forced'].includes(track.kind);
@@ -104,6 +113,9 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 
 	/** @type {function(Object):void} */
 	#sendMessage;
+
+	/** @type {number} */
+	#id;
 
 	/** @type {HTMLVideoElement?} */
 	#dom = null;
@@ -320,7 +332,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 				}
 			}
 		}
-		this.setVideoFit('');
+		this.setStyle('');
 		this.#dom = null;
 	};
 
@@ -352,12 +364,23 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 	 * @param {function(Object):void} sendMessage 
 	 */
 	constructor(sendMessage) {
+		this.#id = VideoViewPlugin.#nextId++;
+		VideoViewPlugin.#instances.set(this.#id, this);
 		this.#sendMessage = sendMessage;
+	}
+
+	get id() {
+		return this.#id;
 	}
 
 	/** @returns {HTMLVideoElement} */
 	get dom() {
 		return this.#dom;
+	}
+
+	dispose() {
+		VideoViewPlugin.#instances.delete(this.#id);
+		this.close();
 	}
 
 	/** @param {string} url */
@@ -578,6 +601,11 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		});
 		this.#dom.addEventListener('error', () => {
 			if (this.#state > 0) {
+				for (const n in MediaError) {
+					if (MediaError[n] === this.#dom.error.code) {
+						return this.#sendError(n);
+					}
+				}
 				this.#sendError(this.#dom.error.message);
 			}
 		});
@@ -732,7 +760,7 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 			this.#shaka.attach(this.#dom);
 			this.#shaka.load(url, null, cType).catch(sendError);
 		} else {
-			if (cType) {
+			if (cType && this.#dom.canPlayType(cType)) {
 				const src = document.createElement('source');
 				src.src = url;
 				src.type = cType;
@@ -892,39 +920,42 @@ globalThis.VideoViewPlugin = class VideoViewPlugin {
 		this.#setSubtitleTrack();
 	}
 
-	/** @param {string} fit */
-	setVideoFit(fit) {
-		if (fit === 'scaleDown') {
-			fit = 'scale-down';
+	/**
+	 * @param {number} backgroundColor
+	 * @param {string} objectFit
+	 * */
+	setStyle(objectFit, backgroundColor) {
+		if (typeof backgroundColor === 'number') {
+			const s = backgroundColor.toString(16).padStart(8, '0'),
+				m = s.match(/^(.{2})(.{6})$/); // argb to rgba
+			this.#dom.style.backgroundColor = `#${m[2]}${m[1]}`;
 		}
-		if (fit === 'fitWidth' || fit === 'fitHeight') {
-			this.#fitWidth = fit === 'fitWidth';
-			if (!this.#observer) {
-				this.#observer = new ResizeObserver(entries => {
-					this.#dom.width = Math.round(entries[0].contentBoxSize[0].inlineSize * devicePixelRatio * visualViewport.scale);
-					this.#dom.height = Math.round(entries[0].contentBoxSize[0].blockSize * devicePixelRatio * visualViewport.scale);
+		if (typeof objectFit !== 'string') {
+			if (objectFit === 'scaleDown') {
+				objectFit = 'scale-down';
+			}
+			if (objectFit === 'fitWidth' || objectFit === 'fitHeight') {
+				this.#fitWidth = objectFit === 'fitWidth';
+				if (!this.#observer) {
+					this.#observer = new ResizeObserver(entries => {
+						this.#dom.width = Math.round(entries[0].contentBoxSize[0].inlineSize * devicePixelRatio * visualViewport.scale);
+						this.#dom.height = Math.round(entries[0].contentBoxSize[0].blockSize * devicePixelRatio * visualViewport.scale);
+						this.#onresize();
+					});
+					this.#observer.observe(this.#dom);
+				} else if (this.#dom.width > 0 && this.#dom.height > 0) {
 					this.#onresize();
-				});
-				this.#observer.observe(this.#dom);
-			} else if (this.#dom.width > 0 && this.#dom.height > 0) {
-				this.#onresize();
-			}
-		} else {
-			this.#dom.style.objectFit = fit;
-			if (this.#observer) {
-				this.#observer.unobserve(this.#dom);
-				this.#observer = null;
-				this.#dom.removeAttribute('width');
-				this.#dom.removeAttribute('height');
+				}
+			} else {
+				this.#dom.style.objectFit = objectFit;
+				if (this.#observer) {
+					this.#observer.unobserve(this.#dom);
+					this.#observer = null;
+					this.#dom.removeAttribute('width');
+					this.#dom.removeAttribute('height');
+				}
 			}
 		}
-	}
-
-	/** @param {number} color */
-	setBackgroundColor(color) {
-		const s = color.toString(16).padStart(8, '0'),
-			m = s.match(/^(.{2})(.{6})$/); // argb to rgba
-		this.#dom.style.backgroundColor = `#${m[2]}${m[1]}`;
 	}
 };
 Object.freeze(VideoViewPlugin.prototype);

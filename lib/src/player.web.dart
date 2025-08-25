@@ -3,19 +3,15 @@
 import 'dart:js_interop';
 import 'dart:ui_web';
 import 'package:flutter/widgets.dart';
-import 'player.common.dart';
-import 'player.interface.dart';
+import 'player.dart';
 import 'plugin.web.dart';
 
-/// Web implementation of [VideoControllerInterface].
-class VideoController extends VideoControllerInterface {
-  @override
-  get disposed => _disposed;
-  var _disposed = false;
-
-  @override
-  get id => _plugin.id;
-  late final _plugin = VideoViewPlugin.create(
+/// Web implementation of [VideoController].
+class VideoControllerImplementation extends VideoController {
+  /// The id of the player.
+  /// It should be unique and never change.
+  late final id = _plugin.id;
+  late final _plugin = VideoViewPlugin(
     (JSObject message) {
       final e = message.dartify() as Map;
       final eventName = e['event'] as String;
@@ -119,46 +115,13 @@ class VideoController extends VideoControllerInterface {
   var _seeking = false;
   var _loading = false;
 
-  VideoController({
-    super.source,
-    super.volume,
-    super.speed,
-    super.looping,
-    super.autoPlay,
-    super.position,
-    super.showSubtitle,
-    super.preferredSubtitleLanguage,
-    super.preferredAudioLanguage,
-    super.maxBitRate,
-    super.maxResolution,
-  });
+  VideoControllerImplementation() : super.create();
 
   @override
   dispose() {
     if (!disposed) {
-      _disposed = true;
-      VideoViewPlugin.destroy(_plugin);
-      _plugin.close();
-      mediaInfo.dispose();
-      videoSize.dispose();
-      position.dispose();
-      error.dispose();
-      loading.dispose();
-      playbackState.dispose();
-      volume.dispose();
-      speed.dispose();
-      looping.dispose();
-      autoPlay.dispose();
-      finishedTimes.dispose();
-      bufferRange.dispose();
-      maxBitRate.dispose();
-      maxResolution.dispose();
-      preferredAudioLanguage.dispose();
-      preferredSubtitleLanguage.dispose();
-      showSubtitle.dispose();
-      overrideAudio.dispose();
-      overrideSubtitle.dispose();
-      displayMode.dispose();
+      super.dispose();
+      _plugin.dispose();
     }
   }
 
@@ -364,19 +327,10 @@ class VideoController extends VideoControllerInterface {
     return false;
   }
 
-  /// Set the background color of the player.
-  /// This API is only available on web and should be considered as private.
-  void setBackgroundColor(Color color) {
+  /// Set user assigned styles for the player.
+  void setStyle(BoxFit objectFit, Color backgroundColor) {
     if (!disposed) {
-      _plugin.setBackgroundColor(color.toARGB32());
-    }
-  }
-
-  /// Set the content fit of the player.
-  /// This API is only available on web and should be considered as private.
-  void setVideoFit(BoxFit fit) {
-    if (!disposed) {
-      _plugin.setVideoFit(fit.name);
+      _plugin.setStyle(objectFit.name, backgroundColor.toARGB32());
     }
   }
 

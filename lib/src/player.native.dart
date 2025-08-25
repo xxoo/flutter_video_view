@@ -4,24 +4,19 @@ import 'dart:async';
 import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'player.common.dart';
-import 'player.interface.dart';
+import 'player.dart';
 
-/// Native implementation of [VideoControllerInterface].
-class VideoController extends VideoControllerInterface {
+/// Native implementation of [VideoController].
+class VideoControllerImplementation extends VideoController {
   static const _methodChannel = MethodChannel('VideoViewPlugin');
   static var _detectorStarted = false;
 
-  @override
-  get disposed => _disposed;
-  var _disposed = false;
-
-  @override
-  get id => _id;
+  /// The id of the player.
+  /// It should be unique and never change again after the player is initialized, or null otherwise.
+  int? get id => _id;
   int? _id;
 
   /// The id of the subtitle texture if available.
-  /// This API is only available on native platforms and should be considered as private.
   int? get subId => _subId;
   int? _subId;
 
@@ -30,19 +25,7 @@ class VideoController extends VideoControllerInterface {
   var _seeking = false;
   var _position = 0;
 
-  VideoController({
-    super.source,
-    super.volume,
-    super.speed,
-    super.looping,
-    super.autoPlay,
-    super.position,
-    super.showSubtitle,
-    super.preferredSubtitleLanguage,
-    super.preferredAudioLanguage,
-    super.maxBitRate,
-    super.maxResolution,
-  }) {
+  VideoControllerImplementation() : super.create() {
     if (kDebugMode && !_detectorStarted) {
       _detectorStarted = true;
       final receivePort = ReceivePort();
@@ -58,8 +41,9 @@ class VideoController extends VideoControllerInterface {
     _methodChannel.invokeMethod('create').then((value) {
       if (value is! Map) {
         if (!disposed) {
-          error.value = 'unsupported';
+          _source = null;
           loading.value = false;
+          error.value = 'unsupported';
         }
       } else if (disposed) {
         _methodChannel.invokeMethod('dispose', value['id']);
@@ -74,7 +58,6 @@ class VideoController extends VideoControllerInterface {
               if (eventName == 'mediaInfo') {
                 if (_source == e['source']) {
                   loading.value = false;
-                  playbackState.value = VideoControllerPlaybackState.paused;
                   mediaInfo.value = VideoControllerMediaInfo(
                     e['duration'],
                     VideoControllerAudioInfo.batchFromMap(e['audioTracks']),
@@ -87,7 +70,9 @@ class VideoController extends VideoControllerInterface {
                     speed.value = 1;
                   }
                   if (autoPlay.value) {
-                    play();
+                    _play();
+                  } else {
+                    playbackState.value = VideoControllerPlaybackState.paused;
                   }
                 }
               } else if (eventName == 'videoSize') {
@@ -125,8 +110,8 @@ class VideoController extends VideoControllerInterface {
                         VideoControllerPlaybackState.closed ||
                     loading.value) {
                   _source = null;
-                  error.value = e['value'];
                   loading.value = false;
+                  error.value = e['value'];
                   _close();
                 }
               } else if (eventName == 'loading') {
@@ -188,31 +173,11 @@ class VideoController extends VideoControllerInterface {
   @override
   dispose() {
     if (!disposed) {
-      _disposed = true;
+      super.dispose();
       _eventSubscription?.cancel();
       if (id != null) {
         _methodChannel.invokeMethod('dispose', id);
       }
-      mediaInfo.dispose();
-      videoSize.dispose();
-      position.dispose();
-      error.dispose();
-      loading.dispose();
-      playbackState.dispose();
-      volume.dispose();
-      speed.dispose();
-      looping.dispose();
-      autoPlay.dispose();
-      finishedTimes.dispose();
-      bufferRange.dispose();
-      overrideAudio.dispose();
-      overrideSubtitle.dispose();
-      maxBitRate.dispose();
-      maxResolution.dispose();
-      preferredAudioLanguage.dispose();
-      preferredSubtitleLanguage.dispose();
-      showSubtitle.dispose();
-      displayMode.dispose();
     }
   }
 
@@ -248,13 +213,12 @@ class VideoController extends VideoControllerInterface {
     if (!disposed) {
       if (id != null &&
           playbackState.value == VideoControllerPlaybackState.paused) {
-        _methodChannel.invokeMethod('play', id);
-        playbackState.value = VideoControllerPlaybackState.playing;
+        _play();
         return true;
       } else if (!autoPlay.value &&
           playbackState.value == VideoControllerPlaybackState.closed &&
           _source != null) {
-        setAutoPlay(true);
+        autoPlay.value = true;
         return true;
       }
     }
@@ -275,7 +239,7 @@ class VideoController extends VideoControllerInterface {
       } else if (autoPlay.value &&
           playbackState.value == VideoControllerPlaybackState.closed &&
           _source != null) {
-        setAutoPlay(false);
+        autoPlay.value = false;
         return true;
       }
     }
@@ -515,6 +479,11 @@ class VideoController extends VideoControllerInterface {
     'id': id,
     'value': showSubtitle.value,
   });
+
+  void _play() {
+    playbackState.value = VideoControllerPlaybackState.playing;
+    _methodChannel.invokeMethod('play', id);
+  }
 
   void _close() {
     _seeking = false;

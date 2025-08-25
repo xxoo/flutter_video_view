@@ -1,31 +1,49 @@
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:ui_web';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+
+void _register() => platformViewRegistry.registerViewFactory(
+  'video_view',
+  (_, {Object? params}) => VideoViewPlugin.getInstance(params as int).dom,
+);
+
+@JS('VideoViewPlugin')
+external JSFunction? get _pluginClass;
 
 @JS()
 extension type VideoViewPlugin._(JSObject _) implements JSObject {
-  static var _nextId = 0;
-  static final _instances = <int, VideoViewPlugin>{};
-
-  static VideoViewPlugin create(JSFunction onmessage) {
-    final instance = VideoViewPlugin(onmessage);
-    instance.id = _nextId++;
-    _instances[instance.id] = instance;
-    return instance;
+  static void registerWith(Registrar registrar) {
+    const requiredVersion = '1.2.0';
+    const cmd = 'dart run video_view:webinit';
+    var e = '';
+    StackTrace? s;
+    if (_pluginClass == null) {
+      s = StackTrace.current; // VideoViewPlugin.js missing
+      e = 'VideoViewPlugin.js is not loaded.\nPlease try runninng "$cmd" to install.';
+    } else if (VideoViewPlugin.version != requiredVersion) {
+      s = StackTrace.current; // VideoViewPlugin.js version mismatch
+      e = 'VideoViewPlugin.js version: ${VideoViewPlugin.version}, requires $requiredVersion.\nPlease try running "$cmd" to update or cleaning the browser cache.';
+    }
+    if (s == null) {
+      _register();
+    } else if (kDebugMode) {
+      Zone.current.handleUncaughtError(e, s);
+    } else {
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: e, stack: s, library: 'video_view'),
+      );
+      _register(); // try to register anyway
+    }
   }
 
-  static void destroy(VideoViewPlugin instance) =>
-      _instances.remove(instance.id);
-
-  static void registerWith(Registrar registrar) =>
-      platformViewRegistry.registerViewFactory(
-        'video_view',
-        (_, {Object? params}) => _instances[params as int]!.dom,
-      );
-
-  external VideoViewPlugin(JSFunction onmessage);
-  external int id;
+  external static VideoViewPlugin getInstance(int id);
+  external static String? get version;
+  external int get id;
   external JSObject get dom;
+  external VideoViewPlugin(JSFunction onmessage);
+  external void dispose();
   external void play();
   external void pause();
   external void open(String source);
@@ -43,6 +61,5 @@ extension type VideoViewPlugin._(JSObject _) implements JSObject {
   external void setOverrideAudio(String? trackId);
   external void setOverrideSubtitle(String? trackId);
   external bool setDisplayMode(int displayMode);
-  external void setBackgroundColor(int color);
-  external void setVideoFit(String objectFit);
+  external void setStyle(String objectFit, int backgroundColor);
 }

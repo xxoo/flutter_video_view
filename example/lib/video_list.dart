@@ -1,17 +1,16 @@
-// This example shows how to avoid "SetState() called during build" error with SetStateAsync mixin.
+// This example turns out the lifecycle of an auto created VideoController is tied to its owner VideoView.
 // Videos are loaded only when they are in view. After scrolling out of view, they are paused.
 // After scrolling out of the screen, they may be disposed. Then you'll see they become black.
 
 import 'package:flutter/material.dart';
 import 'package:inview_notifier_list/inview_notifier_list.dart';
-import 'package:set_state_async/set_state_async.dart';
 import 'package:video_view/video_view.dart';
 import 'sources.dart';
 
 InViewNotifierList makeVideoList() => InViewNotifierList(
   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 200),
-  isInViewPortCondition:
-      (top, bottom, height) => top * 2 <= height && bottom * 2 > height,
+  isInViewPortCondition: (top, bottom, height) =>
+      top * 2 <= height && bottom * 2 > height,
   builder: (context, index) => _VideoItem(index),
   itemCount: videoSources.length,
 );
@@ -24,18 +23,19 @@ class _VideoItem extends StatefulWidget {
   createState() => _VideoItemState();
 }
 
-class _VideoItemState extends State<_VideoItem> with SetStateAsync {
+class _VideoItemState extends State<_VideoItem> {
   VideoController? thisPlayer;
   bool inView = false;
+
+  void _update() => setState(() {});
 
   @override
   build(_) => InViewNotifierWidget(
     id: '${widget.index}',
     child: Container(
-      margin:
-          widget.index < videoSources.length
-              ? const EdgeInsets.only(bottom: 16)
-              : null,
+      margin: widget.index < videoSources.length
+          ? const EdgeInsets.only(bottom: 16)
+          : null,
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: Stack(
@@ -43,11 +43,12 @@ class _VideoItemState extends State<_VideoItem> with SetStateAsync {
           children: [
             VideoView(
               looping: true,
+              cancelableNotification: true,
               onCreated: (player) {
                 thisPlayer = player;
-                player.mediaInfo.addListener(setStateAsync);
-                player.loading.addListener(setStateAsync);
-                player.videoSize.addListener(setStateAsync);
+                player.mediaInfo.addListener(_update);
+                player.loading.addListener(_update);
+                player.videoSize.addListener(_update);
                 if (inView) {
                   player.open(videoSources[widget.index]);
                   player.play();

@@ -17,7 +17,10 @@ class VideoPlayer extends StatefulWidget {
 }
 
 class _VideoPlayerViewState extends State<VideoPlayer> {
-  final _player = VideoController(source: videoSources.first);
+  final _player = VideoController(
+    source: videoSources.first,
+    cancelableNotification: true,
+  );
   final _inputController = TextEditingController();
   SubtitleController? _subtitleController;
   var _videoFit = BoxFit.contain;
@@ -28,14 +31,12 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
     if (value.isNotEmpty && Uri.tryParse(value) != null) {
       final response = await get(Uri.parse(value));
       setState(
-        () =>
-            _subtitleController = SubtitleController.string(
-              response.body,
-              format:
-                  value.endsWith('.srt')
-                      ? SubtitleFormat.srt
-                      : SubtitleFormat.webvtt,
-            ),
+        () => _subtitleController = SubtitleController.string(
+          response.body,
+          format: value.endsWith('.srt')
+              ? SubtitleFormat.srt
+              : SubtitleFormat.webvtt,
+        ),
       );
     } else {
       setState(() => _subtitleController = null);
@@ -204,12 +205,11 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                         _player.playbackState.value ==
                         VideoControllerPlaybackState.playing,
                     selectedIcon: const Icon(Icons.pause),
-                    onPressed:
-                        () =>
-                            _player.playbackState.value ==
-                                    VideoControllerPlaybackState.playing
-                                ? _player.pause()
-                                : _player.play(),
+                    onPressed: () =>
+                        _player.playbackState.value ==
+                            VideoControllerPlaybackState.playing
+                        ? _player.pause()
+                        : _player.play(),
                   ),
                   IconButton(
                     icon: const Icon(Icons.stop),
@@ -217,13 +217,13 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.fast_rewind),
-                    onPressed:
-                        () => _player.seekTo(_player.position.value - 5000),
+                    onPressed: () =>
+                        _player.seekTo(_player.position.value - 5000),
                   ),
                   IconButton(
                     icon: const Icon(Icons.fast_forward),
-                    onPressed:
-                        () => _player.seekTo(_player.position.value + 5000),
+                    onPressed: () =>
+                        _player.seekTo(_player.position.value + 5000),
                   ),
                   const Spacer(),
                   Icon(
@@ -231,7 +231,7 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                             VideoControllerPlaybackState.playing
                         ? Icons.play_arrow
                         : _player.playbackState.value ==
-                            VideoControllerPlaybackState.paused
+                              VideoControllerPlaybackState.paused
                         ? Icons.pause
                         : Icons.stop,
                     size: 16.0,
@@ -241,20 +241,18 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.picture_in_picture),
-                      onPressed:
-                          () => _player.setDisplayMode(
-                            _player.displayMode.value ==
-                                    VideoControllerDisplayMode.pictureInPicture
-                                ? VideoControllerDisplayMode.normal
-                                : VideoControllerDisplayMode.pictureInPicture,
-                          ),
+                      onPressed: () => _player.setDisplayMode(
+                        _player.displayMode.value ==
+                                VideoControllerDisplayMode.pictureInPicture
+                            ? VideoControllerDisplayMode.normal
+                            : VideoControllerDisplayMode.pictureInPicture,
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.fullscreen),
-                      onPressed:
-                          () => _player.setDisplayMode(
-                            VideoControllerDisplayMode.fullscreen,
-                          ),
+                      onPressed: () => _player.setDisplayMode(
+                        VideoControllerDisplayMode.fullscreen,
+                      ),
                     ),
                   ],
                 ],
@@ -294,16 +292,15 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: videoSources.length,
-            itemBuilder:
-                (context, index) => AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: InkWell(
-                    onTap: () => _player.open(videoSources[index]),
-                    child: VideoView(source: videoSources[index]),
-                  ),
-                ),
-            separatorBuilder:
-                (BuildContext context, int index) => const SizedBox(width: 8),
+            itemBuilder: (context, index) => AspectRatio(
+              aspectRatio: 16 / 9,
+              child: InkWell(
+                onTap: () => _player.open(videoSources[index]),
+                child: VideoView(source: videoSources[index]),
+              ),
+            ),
+            separatorBuilder: (BuildContext context, int index) =>
+                const SizedBox(width: 8),
           ),
         ),
         const SizedBox(height: 16),

@@ -13,7 +13,6 @@ dependencies:
   http: any
   flutter_subtitle: any
   inview_notifier_list: any
-  set_state_async: any
   video_view:
     # When depending on this package from a real application you should use:
     #   video_view: ^x.y.z

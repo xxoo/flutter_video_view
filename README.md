@@ -1,15 +1,15 @@
-### About
+<center><img src="logo.svg" alt="video_view" width="128" /></center>
 
 `video_view` is a lightweight media player with subtitle rendering[^subtitle] and audio track switching support, leveraging system or app-level components for seamless playback.
 For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
 
-**NOTE:** `video_view` requires Flutter 3.32 or higher. For older versions, please use [av_media_player](https://pub.dev/packages/av_media_player) instead.
+**NOTE:** `video_view` requires Flutter 3.32 or higher.
 ___
 
 ### Demo
 You may try the [online demo](https://xxoo.github.io/flutter_video_view/), or run the demo app locally by cloning this repository:
 ```shell
-git clone -c core.symlinks=true https://github.com/xxoo/flutter_video_view.git
+git clone https://github.com/xxoo/flutter_video_view.git
 cd flutter_video_view/example
 ```
 For basic usage, just run:
@@ -36,7 +36,6 @@ import 'package:video_view/video_view.dart';
 ```shell
 dart run video_view:webinit
 ```
-4. If you encounter ***"setState while widget is [building](https://www.google.com/search?q=setState()+or+markNeedsBuild()+called+during+build) or [locked](https://www.google.com/search?q=setState()+or+markNeedsBuild()+called+when+widget+tree+was+locked)"*** issue, then you probably need to install [`set_state_async`](https://pub.dev/packages/set_state_async) package as well.
 ___
 
 ### Platform support

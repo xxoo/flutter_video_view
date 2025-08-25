@@ -14,7 +14,8 @@ class TrackSelector extends StatefulWidget {
 class _TrackSelectorViewState extends State<TrackSelector> {
   final _player = VideoController(
     source:
-        'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8',
+        'https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8',
+    cancelableNotification: true,
     //position: 300000,
     //autoPlay: true,
   );
@@ -83,11 +84,10 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                 },
               ),
               AspectRatio(
-                aspectRatio:
-                    _player.videoSize.value == Size.zero
-                        ? 16 / 9
-                        : _player.videoSize.value.width /
-                            _player.videoSize.value.height,
+                aspectRatio: _player.videoSize.value == Size.zero
+                    ? 16 / 9
+                    : _player.videoSize.value.width /
+                          _player.videoSize.value.height,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -134,12 +134,11 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                         _player.playbackState.value ==
                         VideoControllerPlaybackState.playing,
                     selectedIcon: const Icon(Icons.pause),
-                    onPressed:
-                        () =>
-                            _player.playbackState.value ==
-                                    VideoControllerPlaybackState.playing
-                                ? _player.pause()
-                                : _player.play(),
+                    onPressed: () =>
+                        _player.playbackState.value ==
+                            VideoControllerPlaybackState.playing
+                        ? _player.pause()
+                        : _player.play(),
                   ),
                   IconButton(
                     icon: const Icon(Icons.stop),
@@ -147,13 +146,13 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.fast_rewind),
-                    onPressed:
-                        () => _player.seekTo(_player.position.value - 5000),
+                    onPressed: () =>
+                        _player.seekTo(_player.position.value - 5000),
                   ),
                   IconButton(
                     icon: const Icon(Icons.fast_forward),
-                    onPressed:
-                        () => _player.seekTo(_player.position.value + 5000),
+                    onPressed: () =>
+                        _player.seekTo(_player.position.value + 5000),
                   ),
                   const Spacer(),
                   Icon(
@@ -161,7 +160,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                             VideoControllerPlaybackState.playing
                         ? Icons.play_arrow
                         : _player.playbackState.value ==
-                            VideoControllerPlaybackState.paused
+                              VideoControllerPlaybackState.paused
                         ? Icons.pause
                         : Icons.stop,
                     size: 16.0,
@@ -171,20 +170,18 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.picture_in_picture),
-                      onPressed:
-                          () => _player.setDisplayMode(
-                            _player.displayMode.value ==
-                                    VideoControllerDisplayMode.pictureInPicture
-                                ? VideoControllerDisplayMode.normal
-                                : VideoControllerDisplayMode.pictureInPicture,
-                          ),
+                      onPressed: () => _player.setDisplayMode(
+                        _player.displayMode.value ==
+                                VideoControllerDisplayMode.pictureInPicture
+                            ? VideoControllerDisplayMode.normal
+                            : VideoControllerDisplayMode.pictureInPicture,
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.fullscreen),
-                      onPressed:
-                          () => _player.setDisplayMode(
-                            VideoControllerDisplayMode.fullscreen,
-                          ),
+                      onPressed: () => _player.setDisplayMode(
+                        VideoControllerDisplayMode.fullscreen,
+                      ),
                     ),
                   ],
                 ],
@@ -209,8 +206,8 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                   "Audio Language",
                   style: TextStyle(fontSize: 14),
                 ),
-                onSelected:
-                    (value) => _player.setPreferredAudioLanguage(value ?? ""),
+                onSelected: (value) =>
+                    _player.setPreferredAudioLanguage(value ?? ""),
               ),
               DropdownMenu(
                 width: 160,
@@ -224,9 +221,8 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                   "Subtitle Language",
                   style: TextStyle(fontSize: 14),
                 ),
-                onSelected:
-                    (value) =>
-                        _player.setPreferredSubtitleLanguage(value ?? ""),
+                onSelected: (value) =>
+                    _player.setPreferredSubtitleLanguage(value ?? ""),
               ),
               DropdownMenu(
                 width: 160,
@@ -305,17 +301,17 @@ class _TrackSelectorViewState extends State<TrackSelector> {
         itemCount: ids.length,
         itemBuilder: (context, index) {
           final id = ids.elementAt(index);
-          final audioTrack =
-              isAudio ? _player.mediaInfo.value!.audioTracks[id] : null;
-          final subtitleTrack =
-              isAudio ? null : _player.mediaInfo.value!.subtitleTracks[id];
+          final audioTrack = isAudio
+              ? _player.mediaInfo.value!.audioTracks[id]
+              : null;
+          final subtitleTrack = isAudio
+              ? null
+              : _player.mediaInfo.value!.subtitleTracks[id];
           final selected = target.value == id;
           return InkWell(
-            onTap:
-                () =>
-                    isAudio
-                        ? _player.setOverrideAudio(selected ? null : id)
-                        : _player.setOverrideSubtitle(selected ? null : id),
+            onTap: () => isAudio
+                ? _player.setOverrideAudio(selected ? null : id)
+                : _player.setOverrideSubtitle(selected ? null : id),
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
@@ -339,8 +335,8 @@ ${subtitleTrack.format ?? 'unknown format'}''',
             ),
           );
         },
-        separatorBuilder:
-            (BuildContext context, int index) => const SizedBox(width: 8),
+        separatorBuilder: (BuildContext context, int index) =>
+            const SizedBox(width: 8),
       ),
     );
   }

@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'video_view'
-  s.version          = '1.1.8'
+  s.version          = '1.2.0'
   s.summary          = 'A lightweight media player for Flutter.'
   s.description      = <<-DESC
 A lightweight media player with subtitle rendering and audio track switching support, leveraging system or app-level components for seamless playback.
@@ -15,9 +15,14 @@ A lightweight media player with subtitle rendering and audio track switching sup
 
   s.source           = { :path => '.' }
   s.source_files     = 'video_view/Sources/video_view/**/*.swift'
-  s.dependency 'Flutter'
+  s.swift_version    = '5.0'
 
-  s.platform = :ios, '15.0'
-  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
-  s.swift_version = '5.0'
+  s.ios.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
+  s.osx.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
+
+  s.ios.dependency 'Flutter'
+  s.osx.dependency 'FlutterMacOS'
+
+  s.ios.deployment_target = '15.0'
+  s.osx.deployment_target = '12.0'
 end
