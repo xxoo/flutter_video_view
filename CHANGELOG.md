@@ -1,3 +1,6 @@
+# 1.2.2
+- convert logo file to webp format
+
 # 1.2.1
 - fix a bug may cause `objectFit` not working as expected.
 

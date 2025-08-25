@@ -6,7 +6,7 @@
  * Licensed under BSD 2-Clause.
  */
 globalThis.VideoViewPlugin = class VideoViewPlugin {
-	static version = '1.2.1';
+	static version = '1.2.2';
 	/** @type {Map<number, VideoViewPlugin>} */
 	static #instances = new Map();
 	static #nextId = 0;

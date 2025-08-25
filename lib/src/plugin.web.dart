@@ -15,7 +15,7 @@ external JSFunction? get _pluginClass;
 @JS()
 extension type VideoViewPlugin._(JSObject _) implements JSObject {
   static void registerWith(Registrar registrar) {
-    const requiredVersion = '1.2.1';
+    const requiredVersion = '1.2.2';
     const cmd = 'dart run video_view:webinit';
     var e = '';
     StackTrace? s;
