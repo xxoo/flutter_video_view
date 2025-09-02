@@ -331,12 +331,27 @@ class VideoController: NSObject, FlutterStreamHandler {
 		}
 	}
 
+	private func safeTimeToMilliseconds(_ time: CMTime) -> Int {
+		let seconds = time.seconds
+		if seconds.isInfinite || seconds.isNaN {
+			return 0
+		}
+		let milliseconds = seconds * 1000
+		if milliseconds > Double(Int.max) {
+			return Int.max
+		}
+		if milliseconds < Double(Int.min) {
+			return Int.min
+		}
+		return Int(milliseconds)
+	}
+
 	private func setPosition(time: CMTime) {
 		if time != position {
 			position = time
 			eventSink?([
 				"event": "position",
-				"value": Int(position.seconds * 1000)
+				"value": safeTimeToMilliseconds(position)
 			])
 		}
 	}
@@ -344,8 +359,8 @@ class VideoController: NSObject, FlutterStreamHandler {
 	private func sendBuffer(currentTime: CMTime) {
 		eventSink?([
 			"event": "buffer",
-			"start": Int(currentTime.seconds * 1000),
-			"end": Int(bufferPosition.seconds * 1000)
+			"start": safeTimeToMilliseconds(currentTime),
+			"end": safeTimeToMilliseconds(bufferPosition)
 		])
 	}
 	
@@ -382,7 +397,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 					}
 				}
 				avPlayer.volume = volume
-				let duration = streaming ? 0 : Int(avPlayer.currentItem!.duration.seconds * 1000)
+				let duration = streaming ? 0 : safeTimeToMilliseconds(avPlayer.currentItem!.duration)
 				if duration > 0 && speed != 1 {
 					speed = 1
 				}
