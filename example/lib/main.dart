@@ -23,7 +23,7 @@ class _MyAppState extends State<MyApp> {
     children: [
       VideoView(
         source:
-            'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8',
+            'https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8',
         autoPlay: true,
         looping: true,
         cancelableNotification: true,

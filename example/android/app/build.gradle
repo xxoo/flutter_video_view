@@ -24,7 +24,7 @@ if (flutterVersionName == null) {
 
 android {
     namespace "dev.xx.video_view_example"
-    compileSdk 36
+    compileSdk = 36
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8

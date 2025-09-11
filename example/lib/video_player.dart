@@ -292,15 +292,14 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: videoSources.length,
-            itemBuilder: (context, index) => AspectRatio(
+            itemBuilder: (_, index) => AspectRatio(
               aspectRatio: 16 / 9,
               child: InkWell(
                 onTap: () => _player.open(videoSources[index]),
                 child: VideoView(source: videoSources[index]),
               ),
             ),
-            separatorBuilder: (BuildContext context, int index) =>
-                const SizedBox(width: 8),
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
           ),
         ),
         const SizedBox(height: 16),

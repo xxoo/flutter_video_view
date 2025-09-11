@@ -135,12 +135,18 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 
 	fun seekTo(pos: Long, fast: Boolean): Any? {
 		if (state == 1U) {
-			position = pos
-		} else if (exoPlayer.isCurrentMediaItemLive || exoPlayer.currentPosition == pos) {
-			eventSink?.success(mapOf("event" to "seekEnd"))
-		} else {
-			seeking = true
-			seek(pos, fast)
+			if (seeking) {
+				seek(pos, true)
+			} else {
+				position = pos
+			}
+		} else if (state > 1U) {
+			if (exoPlayer.currentPosition != pos) {
+				seeking = true
+				seek(pos, fast)
+			} else if (!seeking) {
+				eventSink?.success(mapOf("event" to "seekEnd"))
+			}
 		}
 		return null
 	}
@@ -153,7 +159,9 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 
 	fun setSpeed(spd: Float): Any? {
 		speed = spd
-		exoPlayer.playbackParameters = exoPlayer.playbackParameters.withSpeed(speed)
+		if (!exoPlayer.isCurrentMediaItemLive) {
+			justSetSpeed(speed)
+		}
 		return null
 	}
 
@@ -225,10 +233,6 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 
 	private fun loadEnd() {
 		state = 2U
-		exoPlayer.volume = volume
-		if (exoPlayer.isCurrentMediaItemLive && speed != 1F) {
-			setSpeed(1F)
-		}
 		val audioTracks = mutableMapOf<String, MutableMap<String, Any?>>()
 		val subtitleTracks = mutableMapOf<String, MutableMap<String, Any?>>()
 		for (i in 0 until exoPlayer.currentTracks.groups.size) {
@@ -263,10 +267,16 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 			"subtitleTracks" to subtitleTracks,
 			"source" to source
 		))
-		watchPosition()
-		if (networking && !exoPlayer.isCurrentMediaItemLive) {
-			watchBuffer()
+		if (!exoPlayer.isCurrentMediaItemLive) {
+			watchPosition()
+			if (networking) {
+				watchBuffer()
+			}
 		}
+	}
+
+	private fun justSetSpeed(spd: Float) {
+		exoPlayer.playbackParameters = exoPlayer.playbackParameters.withSpeed(spd)
 	}
 
 	private fun justPlay() {
@@ -343,15 +353,20 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		super.onPlaybackStateChanged(playbackState)
 		if (seeking && (playbackState == Player.STATE_READY || playbackState == Player.STATE_ENDED)) {
 			if (state == 1U) {
+				seeking = false
 				loadEnd()
 			} else {
 				seekEnd()
 			}
 		} else if (playbackState == Player.STATE_READY) {
 			if (state == 1U) {
-				if (position == 0L) {
+				exoPlayer.volume = volume
+				justSetSpeed(if (exoPlayer.isCurrentMediaItemLive) 1F else speed)
+				if (exoPlayer.isCurrentMediaItemLive || position == 0L) {
+					position = 0L
 					loadEnd()
 				} else {
+					seeking = true
 					seek(position, true)
 					position = 0L
 				}

@@ -43,6 +43,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 	private var showSubtitle = false
 	private var networking = false
 	private var streaming = false
+	private var seeking = false
 
 	init(registrar: FlutterPluginRegistrar) {
 #if os(macOS)
@@ -163,6 +164,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 		rendering = nil
 		networking = false
 		streaming = false
+		seeking = false
 		mediaGroups.removeAll()
 		if avPlayer.currentItem != nil {
 			NotificationCenter.default.removeObserver(
@@ -191,17 +193,25 @@ class VideoController: NSObject, FlutterStreamHandler {
 	func seekTo(pos: Int64, fast: Bool) {
 		let time = CMTime(seconds: Double(pos) / 1000, preferredTimescale: 1000)
 		if state == 1 {
-			position = time
-		} else if streaming || avPlayer.currentItem == nil || avPlayer.currentTime() == time {
-			eventSink?(["event": "seekEnd"])
-		} else {
-			seek(to: time, fast: fast) { [weak self] finished in
-				if finished && self != nil {
-					self!.eventSink?(["event": "seekEnd"])
-					if self!.watcher == nil {
-						self!.setPosition(time: self!.avPlayer.currentTime())
+			if seeking {
+				startAt(time: time)
+			} else {
+				position = time
+			}
+		} else if state > 1 {
+			if avPlayer.currentTime() != time {
+				seeking = true
+				seek(to: time, fast: fast) { [weak self] finished in
+					if finished && self != nil {
+						self!.seeking = false
+						self!.eventSink?(["event": "seekEnd"])
+						if self!.watcher == nil {
+							self!.setPosition(time: self!.avPlayer.currentTime())
+						}
 					}
 				}
+			} else if !seeking {
+				eventSink?(["event": "seekEnd"])
 			}
 		}
 	}
@@ -213,7 +223,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 
 	func setSpeed(spd: Float) {
 		speed = spd
-		if avPlayer.rate > 0 {
+		if !streaming && avPlayer.rate > 0 {
 			avPlayer.rate = speed
 		}
 	}
@@ -277,9 +287,20 @@ class VideoController: NSObject, FlutterStreamHandler {
 			avPlayer.seek(to: to, toleranceBefore: .zero, toleranceAfter: .zero, completionHandler: completion)
 		}
 	}
+	
+	private func startAt(time: CMTime) {
+		seek(to: time, fast: true) { [weak self] finished in
+			if finished && self != nil {
+				self!.seeking = false
+				self!.loadEnd()
+			}
+		}
+	}
 
 	private func justPlay() {
-		if position == avPlayer.currentItem!.duration {
+		if streaming {
+			avPlayer.rate = 1
+		} else if position == avPlayer.currentItem!.duration {
 			avPlayer.seek(to: .zero) { [weak self] finished in
 				if finished && self != nil {
 					self!.setPosition(time: .zero)
@@ -287,7 +308,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 				}
 			}
 		} else {
-			if watcher == nil && avPlayer.currentItem != nil && !streaming {
+			if watcher == nil && avPlayer.currentItem != nil {
 				watcher = avPlayer.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.01, preferredTimescale: 1000), queue: nil) { [weak self] time in
 					if self != nil {
 						if self!.avPlayer.rate == 0 || self!.avPlayer.error != nil {
@@ -397,22 +418,22 @@ class VideoController: NSObject, FlutterStreamHandler {
 					}
 				}
 				avPlayer.volume = volume
-				let duration = streaming ? 0 : safeTimeToMilliseconds(avPlayer.currentItem!.duration)
-				if duration > 0 && speed != 1 {
-					speed = 1
-				}
 				state = 2
 				eventSink?([
 					"event": "mediaInfo",
-					"duration": duration,
+					"duration": streaming ? 0 : safeTimeToMilliseconds(avPlayer.currentItem!.duration),
 					"audioTracks": audioTracks,
 					"subtitleTracks": subtitleTracks,
 					"source": source!
 				])
-				let time = avPlayer.currentTime()
-				setPosition(time: time)
-				if networking && !streaming && bufferPosition > time {
-					sendBuffer(currentTime: time)
+				if !streaming {
+					let time = avPlayer.currentTime()
+					if time != .zero {
+						setPosition(time: time)
+					}
+					if networking && bufferPosition > time {
+						sendBuffer(currentTime: time)
+					}
 				}
 			}
 		}
@@ -421,10 +442,8 @@ class VideoController: NSObject, FlutterStreamHandler {
 	@objc
 	private func onFinish(notification: NSNotification) {
 		if state > 2 {
-			if avPlayer.currentItem == nil || avPlayer.currentItem!.duration == .zero {
-				if avPlayer.currentItem != nil {
-					close()
-				}
+			if streaming {
+				close()
 			} else {
 				if watcher != nil {
 					stopWatcher()
@@ -492,13 +511,13 @@ class VideoController: NSObject, FlutterStreamHandler {
 			switch avPlayer.currentItem?.status {
 			case .readyToPlay:
 				if state == 1 {
-					streaming = avPlayer.currentItem!.duration.seconds <= 0
-					if position == .zero {
+					streaming = safeTimeToMilliseconds(avPlayer.currentItem!.duration) <= 0
+					if streaming || position == .zero {
+						position = .zero
 						loadEnd()
 					} else {
-						seek(to: position, fast: true) { [weak self] finished in
-							self?.loadEnd()
-						}
+						seeking = true
+						startAt(time: position)
 						position = .zero
 					}
 				}

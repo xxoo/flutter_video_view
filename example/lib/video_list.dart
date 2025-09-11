@@ -11,7 +11,7 @@ InViewNotifierList makeVideoList() => InViewNotifierList(
   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 200),
   isInViewPortCondition: (top, bottom, height) =>
       top * 2 <= height && bottom * 2 > height,
-  builder: (context, index) => _VideoItem(index),
+  builder: (_, index) => _VideoItem(index),
   itemCount: videoSources.length,
 );
 
@@ -24,8 +24,8 @@ class _VideoItem extends StatefulWidget {
 }
 
 class _VideoItemState extends State<_VideoItem> {
-  VideoController? thisPlayer;
-  bool inView = false;
+  VideoController? _player;
+  var _inView = false;
 
   void _update() => setState(() {});
 
@@ -45,40 +45,39 @@ class _VideoItemState extends State<_VideoItem> {
               looping: true,
               cancelableNotification: true,
               onCreated: (player) {
-                thisPlayer = player;
+                _player = player;
                 player.mediaInfo.addListener(_update);
                 player.loading.addListener(_update);
                 player.videoSize.addListener(_update);
-                if (inView) {
+                if (_inView) {
                   player.open(videoSources[widget.index]);
                   player.play();
                 }
               },
             ),
-            if (thisPlayer?.mediaInfo.value != null &&
-                thisPlayer!.videoSize.value == Size.zero)
+            if (_player?.mediaInfo.value != null &&
+                _player!.videoSize.value == Size.zero)
               const Text(
                 'Audio only',
                 style: TextStyle(color: Colors.white, fontSize: 24),
               ),
-            if (thisPlayer != null && thisPlayer!.loading.value)
+            if (_player != null && _player!.loading.value)
               const CircularProgressIndicator(),
           ],
         ),
       ),
     ),
-    builder: (context, isInView, child) {
-      inView = isInView;
-      if (thisPlayer != null) {
-        if (inView) {
+    builder: (_, isInView, child) {
+      _inView = isInView;
+      if (_player != null) {
+        if (_inView) {
           // We should open the video only if it's niehter loading nor opened.
-          if (thisPlayer!.mediaInfo.value == null &&
-              !thisPlayer!.loading.value) {
-            thisPlayer!.open(videoSources[widget.index]);
+          if (_player!.mediaInfo.value == null && !_player!.loading.value) {
+            _player!.open(videoSources[widget.index]);
           }
-          thisPlayer!.play();
+          _player!.play();
         } else {
-          thisPlayer!.pause();
+          _player!.pause();
         }
       }
       return child!;

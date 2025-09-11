@@ -1,5 +1,5 @@
 group 'dev.xx.video_view'
-version '1.2.2'
+version '1.2.3'
 
 buildscript {
 	repositories {
@@ -8,8 +8,8 @@ buildscript {
 	}
 
 	dependencies {
-		classpath 'com.android.tools.build:gradle:8.12.0'
-		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.10"
+		classpath 'com.android.tools.build:gradle:8.13.0'
+		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20"
 	}
 }
 
@@ -50,6 +50,6 @@ android {
 	compileSdk = 36
 
 	defaultConfig {
-		minSdk = 23
+		minSdkVersion 23
 	}
 }

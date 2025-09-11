@@ -14,7 +14,7 @@ class TrackSelector extends StatefulWidget {
 class _TrackSelectorViewState extends State<TrackSelector> {
   final _player = VideoController(
     source:
-        'https://storage.googleapis.com/shaka-demo-assets/angel-one-hls/hls.m3u8',
+        'https://playertest.longtailvideo.com/adaptive/elephants_dream_v4/index.m3u8',
     cancelableNotification: true,
     //position: 300000,
     //autoPlay: true,
@@ -299,7 +299,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.only(left: 16, right: 16, top: 6, bottom: 16),
         itemCount: ids.length,
-        itemBuilder: (context, index) {
+        itemBuilder: (_, index) {
           final id = ids.elementAt(index);
           final audioTrack = isAudio
               ? _player.mediaInfo.value!.audioTracks[id]
@@ -335,8 +335,7 @@ ${subtitleTrack.format ?? 'unknown format'}''',
             ),
           );
         },
-        separatorBuilder: (BuildContext context, int index) =>
-            const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
       ),
     );
   }

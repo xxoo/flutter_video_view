@@ -1,45 +1,28 @@
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:ui_web';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
-
-void _register() => platformViewRegistry.registerViewFactory(
-  'video_view',
-  (_, {Object? params}) => VideoViewPlugin.getInstance(params as int).dom,
-);
-
-@JS('VideoViewPlugin')
-external JSFunction? get _pluginClass;
 
 @JS()
 extension type VideoViewPlugin._(JSObject _) implements JSObject {
-  static void registerWith(Registrar registrar) {
-    const requiredVersion = '1.2.2';
-    const cmd = 'dart run video_view:webinit';
-    var e = '';
-    StackTrace? s;
-    if (_pluginClass == null) {
-      s = StackTrace.current; // VideoViewPlugin.js missing
-      e = 'VideoViewPlugin.js is not loaded.\nPlease try runninng "$cmd" to install.';
-    } else if (VideoViewPlugin.version != requiredVersion) {
-      s = StackTrace.current; // VideoViewPlugin.js version mismatch
-      e = 'VideoViewPlugin.js version: ${VideoViewPlugin.version}, requires $requiredVersion.\nPlease try running "$cmd" to update or cleaning the browser cache.';
-    }
-    if (s == null) {
-      _register();
-    } else if (kDebugMode) {
-      Zone.current.handleUncaughtError(e, s);
-    } else {
-      FlutterError.reportError(
-        FlutterErrorDetails(exception: e, stack: s, library: 'video_view'),
+  static void registerWith(
+    Registrar registrar,
+  ) => platformViewRegistry.registerViewFactory('video_view', (
+    _, {
+    Object? params,
+  }) {
+    const requiredVersion = '1.2.3';
+    if (version != requiredVersion) {
+      Zone.current.handleUncaughtError(
+        'VideoViewPlugin.js version: $version. Required: $requiredVersion.\nPlease try cleaning the browser cache or using "dart run video_view:webinit" to update.',
+        StackTrace.current,
       );
-      _register(); // try to register anyway
     }
-  }
+    return VideoViewPlugin.getInstance(params as int).dom;
+  });
 
-  external static VideoViewPlugin getInstance(int id);
   external static String? get version;
+  external static VideoViewPlugin getInstance(int id);
   external int get id;
   external JSObject get dom;
   external VideoViewPlugin(JSFunction onmessage);

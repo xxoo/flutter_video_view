@@ -12,6 +12,7 @@ class VideoControllerImplementation extends VideoController {
   /// It should be unique and never change.
   late final id = _plugin.id;
   late final _plugin = VideoViewPlugin(
+    // avoid calling _plugin methods during event handling
     (JSObject message) {
       final e = message.dartify() as Map;
       final eventName = e['event'] as String;

@@ -1,7 +1,18 @@
-<p align="center"><img src="logo.svg" alt="video_view" width="128" /></p>
+<p align="center"><a href="https://github.com/xxoo/flutter_video_view"><img src="logo.svg" alt="video_view" width="128" /></a></p>
 
-`video_view` is a lightweight media player with subtitle rendering[^subtitle] and audio track switching support, leveraging system or app-level components for seamless playback.
-For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
+<p align="center">
+	<img src="https://img.shields.io/pub/v/video_view" alt="pub version">
+	<img src="https://img.shields.io/pub/points/video_view" alt="pub points">
+	<img src="https://img.shields.io/pub/dm/video_view" alt="pub downloads">
+</p>
+
+`video_view` is a lightweight media player with subtitle rendering[^subtitle] and audio track switching support, leveraging system or app-level components for seamless playback. For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
+
+#### Key benefits:
+- Complete platform coverage: Android, iOS, macOS, Windows, Web, Linux.
+- Internal subtitle rendering, audio track switching, max bitrate/resolution limits.
+- Fine-grained status notification with reentrancy prevention.
+- Small, widget-first API: drop-in `VideoView(source: ...)` to start.
 
 **NOTE:** `video_view` requires Flutter 3.32 or higher.
 ___
@@ -32,9 +43,77 @@ flutter pub add video_view
 ```dart
 import 'package:video_view/video_view.dart';
 ```
-3. If your project has web support, you may also need to initialize the web entry point by running the following command after installing or updating `video_view` package:
+3. If your project has web support, you may also need to initialize the web entry point by running the following command after installing or updating this package:
 ```shell
 dart run video_view:webinit
+```
+___
+
+### Sample code
+
+Without controller:
+```dart
+import 'package:flutter/widgets.dart';
+import 'package:video_view/video_view.dart';
+
+void main() => runApp(VideoView(
+	source: 'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+	autoPlay: true,
+	looping: true,
+));
+```
+
+Custom controller:
+```dart
+import 'package:flutter/material.dart';
+import 'package:video_view/video_view.dart';
+
+void main() => runApp(MaterialApp(builder: (_, _) => const MyApp()));
+
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
+  @override
+  createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final _player = VideoController();
+
+  @override
+  initState() {
+    super.initState();
+    _player.open(
+      'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+    );
+    _player.playbackState.addListener(() => setState(() {}));
+  }
+
+  @override
+  dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  build(_) => Stack(
+    alignment: Alignment.center,
+    children: [
+      VideoView(controller: _player),
+      IconButton(
+        iconSize: 64,
+        icon: const Icon(Icons.play_arrow),
+        isSelected:
+            _player.playbackState.value == VideoControllerPlaybackState.playing,
+        selectedIcon: const Icon(Icons.pause),
+        onPressed: () =>
+            _player.playbackState.value == VideoControllerPlaybackState.playing
+            ? _player.pause()
+            : _player.play(),
+      ),
+    ],
+  );
+}
 ```
 ___
 
@@ -73,7 +152,7 @@ ___
 
 ### How to specify format manually
 
-Most backends don't support manually specifying media format, with Android and Web being the exceptions. Therefore, there's no formal API planned for this feature. However, supported platforms can automatically detect the format from the URL. You can simply append a file extension to the query string or hash fragment to specify the format. Please note that only 3 extensions are recognized: `.m3u8`, `.mpd`, and `.ism/manifest`. If multiple extensions are found, the last one takes precedence. For example:
+Most backends don't support manually specifying media format, with Android and Web being the exceptions. Therefore, no formal API planned for this feature. However, supported platforms can still automatically detect stream format from URL. You may simply append a file extension to the query string or hash fragment to specify the format. Please note that only 3 extensions are recognized: `.m3u8`, `.mpd`, and `.ism/manifest`. If multiple extensions are found, the last one takes precedence. For example:
 ```dart
 // No need to specify format, the url already contains `.m3u8`
 final example0 = 'https://example.com/video.m3u8';

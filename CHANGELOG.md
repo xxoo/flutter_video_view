@@ -1,3 +1,6 @@
+# 1.2.3
+- improve live stream handling
+
 # 1.2.2
 - convert logo file to webp format
 
