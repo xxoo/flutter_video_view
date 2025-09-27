@@ -98,6 +98,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 		subId = textureRegistry.register(subtitleTexture)
 		eventChannel = FlutterEventChannel(name: "VideoViewPlugin/\(id!)", binaryMessenger: messager)
 		eventChannel.setStreamHandler(self)
+		setKeepScreenOn(enable: false)
 		avPlayer.appliesMediaSelectionCriteriaAutomatically = true
 		setPreferredAudioLanguage(language: "")
 		setPreferredSubtitleLanguage(language: "")
@@ -266,6 +267,10 @@ class VideoController: NSObject, FlutterStreamHandler {
 		if showSubtitle && state == 2 {
 			textureRegistry.textureFrameAvailable(subId)
 		}
+	}
+	
+	func setKeepScreenOn(enable: Bool) {
+		avPlayer.preventsDisplaySleepDuringVideoPlayback = enable
 	}
 
 	func overrideTrack(groupId: Int, trackId: Int, enabled: Bool) {
@@ -693,6 +698,11 @@ public class VideoViewPlugin: NSObject, FlutterPlugin {
 			let player = players[args["id"] as! Int64]
 			let show = args["value"] as? Bool
 			player?.setShowSubtitle(show: show!)
+		case "setKeepScreenOn":
+			let args = call.arguments as! [String: Any]
+			let player = players[args["id"] as! Int64]
+			let keepOn = args["value"] as? Bool
+			player?.setKeepScreenOn(enable: keepOn!)
 		case "overrideTrack":
 			let args = call.arguments as! [String: Any]
 			let player = players[args["id"] as! Int64]

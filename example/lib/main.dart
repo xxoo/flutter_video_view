@@ -26,6 +26,7 @@ class _MyAppState extends State<MyApp> {
             'https://stream.mux.com/v69RSHhFelSm4701snP22dYz2jICy4E4FUyk02rW4gxRM.m3u8',
         autoPlay: true,
         looping: true,
+        keepScreenOn: true,
         cancelableNotification: true,
         onCreated: (player) => player.loading.addListener(
           () => setState(() => _loading = player.loading.value),

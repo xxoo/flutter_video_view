@@ -16,6 +16,7 @@ class VideoView extends StatefulWidget {
   final double? speed;
   final int? position;
   final bool? showSubtitle;
+  final bool? keepScreenOn;
   final String? preferredSubtitleLanguage;
   final String? preferredAudioLanguage;
   final int? maxBitRate;
@@ -49,6 +50,7 @@ class VideoView extends StatefulWidget {
     this.speed,
     this.position,
     this.showSubtitle,
+    this.keepScreenOn,
     this.preferredSubtitleLanguage,
     this.preferredAudioLanguage,
     this.maxBitRate,
@@ -138,6 +140,7 @@ class _VideoViewState extends State<VideoView> {
         speed: widget.speed,
         position: widget.position,
         showSubtitle: widget.showSubtitle,
+        keepScreenOn: widget.keepScreenOn,
         preferredSubtitleLanguage: widget.preferredSubtitleLanguage,
         preferredAudioLanguage: widget.preferredAudioLanguage,
         maxBitRate: widget.maxBitRate,
@@ -156,6 +159,7 @@ class _VideoViewState extends State<VideoView> {
         speed: widget.speed,
         position: widget.position,
         showSubtitle: widget.showSubtitle,
+        keepScreenOn: widget.keepScreenOn,
         preferredSubtitleLanguage: widget.preferredSubtitleLanguage,
         preferredAudioLanguage: widget.preferredAudioLanguage,
         maxBitRate: widget.maxBitRate,

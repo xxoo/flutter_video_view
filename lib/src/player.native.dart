@@ -166,6 +166,9 @@ class VideoControllerImplementation extends VideoController {
         if (showSubtitle.value) {
           _setShowSubtitle();
         }
+        if (keepScreenOn.value) {
+          _setKeepScreenOn();
+        }
       }
     });
   }
@@ -398,6 +401,18 @@ class VideoControllerImplementation extends VideoController {
   }
 
   @override
+  setKeepScreenOn(value) {
+    if (!disposed && value != keepScreenOn.value) {
+      keepScreenOn.value = value;
+      if (id != null) {
+        _setKeepScreenOn();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  @override
   setOverrideAudio(trackId) => _overrideTrack(trackId, true);
 
   @override
@@ -478,6 +493,11 @@ class VideoControllerImplementation extends VideoController {
   void _setShowSubtitle() => _methodChannel.invokeMethod('setShowSubtitle', {
     'id': id,
     'value': showSubtitle.value,
+  });
+
+  void _setKeepScreenOn() => _methodChannel.invokeMethod('setKeepScreenOn', {
+    'id': id,
+    'value': keepScreenOn.value,
   });
 
   void _play() {

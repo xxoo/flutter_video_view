@@ -1,8 +1,10 @@
 package dev.xx.video_view
 
+import android.app.Activity
 import android.graphics.Color
 import android.graphics.PorterDuff
 import android.os.Handler
+import android.view.WindowManager.LayoutParams
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -14,6 +16,8 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -21,7 +25,10 @@ import io.flutter.view.TextureRegistry.SurfaceProducer
 import kotlin.math.roundToInt
 
 @UnstableApi
-class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) : EventChannel.StreamHandler, Player.Listener, SurfaceProducer.Callback {
+class VideoController(
+	private val binding: FlutterPlugin.FlutterPluginBinding,
+	private val plugin: VideoViewPlugin
+) : EventChannel.StreamHandler, Player.Listener, SurfaceProducer.Callback {
 	private val surfaceProducer = binding.textureRegistry.createSurfaceProducer()
 	private val subSurfaceProducer = binding.textureRegistry.createSurfaceProducer()
 	val id = surfaceProducer.id().toInt()
@@ -30,7 +37,6 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 	private val handler = Handler(exoPlayer.applicationLooper)
 	private val eventChannel = EventChannel(binding.binaryMessenger, "VideoViewPlugin/$id")
 	private val subtitlePainter = SubtitlePainter(binding.applicationContext)
-
 	private var speed = 1F
 	private var volume = 1F
 	private var looping = false
@@ -44,6 +50,8 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 	private var seeking = false
 	private var networking = false
 	private var showSubtitle = false
+	private var keepScreenOn = false
+	private var hasVideo = false
 
 	init {
 		surfaceProducer.setCallback(this)
@@ -53,6 +61,8 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 	}
 
 	fun dispose() {
+		plugin.requestKeepScreenOn(id, false)
+		eventChannel.setStreamHandler(null)
 		handler.removeCallbacksAndMessages(null)
 		exoPlayer.release()
 		surfaceProducer.release()
@@ -95,9 +105,11 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 	}
 
 	fun close(): Any? {
+		plugin.requestKeepScreenOn(id, false)
 		source = null
 		seeking = false
 		networking = false
+		hasVideo = false
 		state = 0U
 		position = 0
 		bufferPosition = 0
@@ -115,6 +127,9 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		if (state == 2U) {
 			state = 3U
 			justPlay()
+			if (hasVideo && keepScreenOn) {
+				plugin.requestKeepScreenOn(id, true)
+			}
 			if (exoPlayer.playbackState == Player.STATE_BUFFERING) {
 				eventSink?.success(mapOf(
 					"event" to "loading",
@@ -129,6 +144,7 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		if (state > 2U) {
 			state = 2U
 			exoPlayer.playWhenReady = false
+			plugin.requestKeepScreenOn(id, false)
 		}
 		return null
 	}
@@ -194,6 +210,16 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		showSubtitle = show
 		if (showSubtitle) {
 			clearSubtitle()
+		}
+		return null
+	}
+
+	fun setKeepScreenOn(enable: Boolean): Any? {
+		if (keepScreenOn != enable) {
+			keepScreenOn = enable
+			if (state > 2U && hasVideo) {
+				plugin.requestKeepScreenOn(id, enable)
+			}
 		}
 		return null
 	}
@@ -390,6 +416,7 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 					justPlay()
 				} else {
 					state = 2U
+					plugin.requestKeepScreenOn(id, false)
 				}
 				eventSink?.success(mapOf("event" to "finished"))
 			}
@@ -422,7 +449,14 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 		if (state > 0U) {
 			val width = (videoSize.width * videoSize.pixelWidthHeightRatio).roundToInt()
 			val height = videoSize.height
-			if (width > 0 && height > 0) {
+			val newHasVideo = width > 0 && height > 0
+			if (newHasVideo != hasVideo) {
+				hasVideo = newHasVideo
+				if (state > 2U && keepScreenOn) {
+					plugin.requestKeepScreenOn(id, hasVideo)
+				}
+			}
+			if (hasVideo) {
 				subSurfaceProducer.setSize(width, height)
 			}
 			eventSink?.success(mapOf(
@@ -463,9 +497,21 @@ class VideoController(private val binding: FlutterPlugin.FlutterPluginBinding) :
 }
 
 @UnstableApi
-class VideoViewPlugin: FlutterPlugin {
+class VideoViewPlugin : FlutterPlugin, ActivityAware {
 	private lateinit var methodChannel: MethodChannel
 	private val players = mutableMapOf<Int, VideoController>()
+	private val keepScreenOnRefs = mutableSetOf<Int>()
+	private var activity: Activity? = null
+
+	fun requestKeepScreenOn(id: Int, enable: Boolean) {
+		if (enable) {
+			keepScreenOnRefs.add(id)
+			activity?.window?.addFlags(LayoutParams.FLAG_KEEP_SCREEN_ON)
+		} else if (keepScreenOnRefs.remove(id) && keepScreenOnRefs.isEmpty()) {
+			activity?.window?.clearFlags(LayoutParams.FLAG_KEEP_SCREEN_ON)
+		}
+	}
+
 	private fun clear() {
 		for (player in players.values) {
 			player.dispose()
@@ -478,7 +524,7 @@ class VideoViewPlugin: FlutterPlugin {
 		methodChannel.setMethodCallHandler { call, result ->
 			when (call.method) {
 				"create" -> {
-					val player = VideoController(binding)
+					val player = VideoController(binding, this)
 					players[player.id] = player
 					result.success(mapOf(
 						"id" to player.id,
@@ -559,6 +605,11 @@ class VideoViewPlugin: FlutterPlugin {
 					val show = call.argument<Boolean>("value")
 					result.success(player?.setShowSubtitle(show!!))
 				}
+				"setKeepScreenOn" -> {
+					val player = players[call.argument<Int>("id")!!]
+					val enable = call.argument<Boolean>("value")
+					result.success(player?.setKeepScreenOn(enable!!))
+				}
 				"overrideTrack" -> {
 					val player = players[call.argument<Int>("id")!!]
 					val groupId = call.argument<Int>("groupId")
@@ -576,5 +627,27 @@ class VideoViewPlugin: FlutterPlugin {
 	override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
 		methodChannel.setMethodCallHandler(null)
 		clear()
+	}
+
+	override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+		activity = binding.activity
+		if (keepScreenOnRefs.isNotEmpty()) {
+			activity!!.window?.addFlags(LayoutParams.FLAG_KEEP_SCREEN_ON)
+		}
+	}
+
+	override fun onDetachedFromActivity() {
+		if (keepScreenOnRefs.isNotEmpty()) {
+			activity?.window?.clearFlags(LayoutParams.FLAG_KEEP_SCREEN_ON)
+		}
+		activity = null
+	}
+
+	override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+		onAttachedToActivity(binding)
+	}
+
+	override fun onDetachedFromActivityForConfigChanges() {
+		onDetachedFromActivity()
 	}
 }

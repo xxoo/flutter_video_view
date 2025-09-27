@@ -328,6 +328,16 @@ class VideoControllerImplementation extends VideoController {
     return false;
   }
 
+  @override
+  bool setKeepScreenOn(value) {
+    if (!disposed && value != keepScreenOn.value) {
+      keepScreenOn.value = value;
+      _plugin.setKeepScreenOn(value);
+      return true;
+    }
+    return false;
+  }
+
   /// Set user assigned styles for the player.
   void setStyle(BoxFit objectFit, Color backgroundColor) {
     if (!disposed) {

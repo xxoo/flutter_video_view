@@ -3,6 +3,7 @@
 #include <locale.h>
 #include <gdk/gdkx.h>
 #include <gdk/gdkwayland.h>
+#include <gtk/gtk.h>
 #include <epoxy/egl.h>
 #include <epoxy/glx.h>
 #include <mpv/client.h>
@@ -31,16 +32,18 @@ typedef struct {
 	GLuint texture;
 	GLsizei width;
 	GLsizei height;
+	guint inhibit_cookie;
 	uint32_t maxBitRate; // 0 for auto
 	uint16_t maxWidth;
 	uint16_t maxHeight;
 	uint16_t overrideAudio; // 0 for auto otherwise track id
 	uint16_t overrideSubtitle;
+	uint8_t state; // 0: idle, 1: opening, 2: paused, 3: playing
 	bool looping;
 	bool streaming;
 	bool networking;
 	bool seeking;
-	uint8_t state; // 0: idle, 1: opening, 2: paused, 3: playing
+	bool keepScreenOn;
 } VideoViewPlugin;
 #define VIDEO_VIEW_PLUGIN(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), video_view_plugin_get_type(), VideoViewPlugin))
 typedef struct {
@@ -259,6 +262,23 @@ static void video_view_plugin_send_buffer(const VideoViewPlugin* self, int64_t p
 	fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
 }
 
+static void video_view_plugin_set_inhibit(VideoViewPlugin* self, const bool enable) {
+	if (enable && self->inhibit_cookie != 0 || !enable && self->inhibit_cookie == 0) {
+		return;
+	}
+	GApplication* app = g_application_get_default();
+	if (!app || !GTK_IS_APPLICATION(app)) {
+		return;
+	}
+	GtkApplication* gtkApp = GTK_APPLICATION(app);
+	if (enable) {
+		self->inhibit_cookie = gtk_application_inhibit(gtkApp, gtk_application_get_active_window(gtkApp), GTK_APPLICATION_INHIBIT_IDLE, "VideoViewPlugin");
+	} else {
+		gtk_application_uninhibit(gtkApp, self->inhibit_cookie);
+		self->inhibit_cookie = 0;
+	}
+}
+
 static void video_view_plugin_loaded(VideoViewPlugin* self) {
 	int64_t count;
 	mpv_get_property(self->mpv, "track-list/count", MPV_FORMAT_INT64, &count);
@@ -390,6 +410,7 @@ static void video_view_plugin_texture_update_callback(void* id) {
 }
 
 static void video_view_plugin_close(VideoViewPlugin* self) {
+	video_view_plugin_set_inhibit(self, false);
 	self->state = 0;
 	self->width = self->height = 0;
 	self->position = self->bufferPosition = 0;
@@ -406,7 +427,7 @@ static void video_view_plugin_close(VideoViewPlugin* self) {
 	mpv_command(self->mpv, stop);
 	const gchar* clear[] = { "playlist-clear", NULL };
 	mpv_command(self->mpv, clear);
-	mpv_set_option_string(self->mpv, "profile", "libmpv");
+	mpv_set_property_string(self->mpv, "profile", "libmpv");
 }
 
 static void video_view_plugin_open(VideoViewPlugin* self, const gchar* source) {
@@ -470,6 +491,9 @@ static void video_view_plugin_play(VideoViewPlugin* self) {
 			video_view_plugin_just_seek_to(self, 100, true, false);
 		}
 		video_view_plugin_set_pause(self, FALSE);
+		if (self->width > 0 && self->height > 0 && self->keepScreenOn) {
+			video_view_plugin_set_inhibit(self, true);
+		}
 	}
 }
 
@@ -477,6 +501,7 @@ static void video_view_plugin_pause(VideoViewPlugin* self) {
 	if (self->state > 2) {
 		self->state = 2;
 		video_view_plugin_set_pause(self, TRUE);
+		video_view_plugin_set_inhibit(self, false);
 	}
 }
 
@@ -546,10 +571,19 @@ static void video_view_plugin_set_max_resolution(VideoViewPlugin* self, const ui
 	}
 }
 
-static void video_view_plugin_set_max_bitrate(VideoViewPlugin* self, uint32_t bitrate) {
+static void video_view_plugin_set_max_bitrate(VideoViewPlugin* self, const uint32_t bitrate) {
 	self->maxBitRate = bitrate;
 	if (self->state > 1) {
 		video_view_plugin_set_max_size(self);
+	}
+}
+
+static void video_view_plugin_set_keep_screen_on(VideoViewPlugin* self, const bool enable) {
+	if (self->keepScreenOn != enable) {
+		self->keepScreenOn = enable;
+		if (self->state > 2 && self->width > 0 && self->height > 0) {
+			video_view_plugin_set_inhibit(self, enable);
+		}
 	}
 }
 
@@ -615,6 +649,7 @@ static gboolean video_view_plugin_event_callback(void* id) {
 								video_view_plugin_set_pause(self, FALSE);
 							} else {
 								self->state = 2;
+								video_view_plugin_set_inhibit(self, false);
 							}
 							g_autoptr(FlValue) evt = fl_value_new_map();
 							fl_value_set_string_take(evt, "event", fl_value_new_string("finished"));
@@ -633,11 +668,16 @@ static gboolean video_view_plugin_event_callback(void* id) {
 				}
 			} else if (event->event_id == MPV_EVENT_VIDEO_RECONFIG) {
 				if (self->state > 0) {
+					const bool hasVideo = self->width > 0 && self->height > 0;
 					int64_t tmp;
 					mpv_get_property(self->mpv, "dwidth", MPV_FORMAT_INT64, &tmp);
 					self->width = (GLsizei)tmp;
 					mpv_get_property(self->mpv, "dheight", MPV_FORMAT_INT64, &tmp);
 					self->height = (GLsizei)tmp;
+					const bool newHasVideo = self->width > 0 && self->height > 0;
+					if (self->state > 2 && self->keepScreenOn && hasVideo != newHasVideo) {
+						video_view_plugin_set_inhibit(self, newHasVideo);
+					}
 					g_autoptr(FlValue) evt = fl_value_new_map();
 					fl_value_set_string_take(evt, "event", fl_value_new_string("videoSize"));
 					fl_value_set_string_take(evt, "width", fl_value_new_float(self->width));
@@ -661,7 +701,7 @@ static gboolean video_view_plugin_event_callback(void* id) {
 				const bool duration_unknown = dur_rc < 0; // unavailable
 				const bool duration_zero = (!duration_unknown && duration == 0.0);
 
-				// 2) seekability
+				// 2) seekable
 				gboolean seekable = FALSE;
 				const int sk_rc = mpv_get_property(self->mpv, "seekable", MPV_FORMAT_FLAG, &seekable);
 				gboolean partially_seekable = FALSE;
@@ -688,7 +728,7 @@ static gboolean video_view_plugin_event_callback(void* id) {
 				}
 				double speed = 1;
 				if (self->streaming) {
-					mpv_set_option_string(self->mpv, "profile", "low-latency");
+					mpv_set_property_string(self->mpv, "profile", "low-latency");
 				} else {
 					speed = self->speed;
 					if (self->position > 0) {
@@ -761,8 +801,9 @@ static void video_view_plugin_init(VideoViewPlugin* self) {
 	self->source = NULL;
 	self->preferredAudioLanguage = NULL;
 	self->preferredSubtitleLanguage = NULL;
-	self->looping = self->streaming = self->networking = self->seeking = false;
+	self->looping = self->streaming = self->networking = self->seeking = self->keepScreenOn = false;
 	self->mpvRenderContext = NULL;
+	self->inhibit_cookie = 0;
 }
 
 static VideoViewPlugin* video_view_plugin_new() {
@@ -786,6 +827,7 @@ static VideoViewPlugin* video_view_plugin_new() {
 	mpv_set_property_string(self->mpv, "keep-open", "yes");
 	mpv_set_property_string(self->mpv, "idle", "yes");
 	mpv_set_property_string(self->mpv, "framedrop", "yes");
+	mpv_set_property_string(self->mpv, "stop-screensaver", "no");
 	//mpv_set_property_string(self->mpv, "sub-create-cc-track", "yes");
 	//mpv_set_property_string(self->mpv, "cache", "no");
 	//mpv_set_option_string(self->mpv, "terminal", "yes");
@@ -801,6 +843,7 @@ static VideoViewPlugin* video_view_plugin_new() {
 
 static void video_view_plugin_destroy(void* obj) {
 	VideoViewPlugin* self = obj;
+	video_view_plugin_set_inhibit(self, false);
 	fl_texture_registrar_unregister_texture(textureRegistrar, FL_TEXTURE(self));
 	g_idle_remove_by_data((void*)self->id);
 	//fl_event_channel_send_end_of_stream(self->eventChannel, NULL, NULL);
@@ -938,6 +981,10 @@ static void video_view_plugin_method_call(FlMethodChannel* channel, FlMethodCall
 		const VideoViewPlugin* player = video_view_plugin_get_player(args, true);
 		const bool value = fl_value_get_bool(fl_value_lookup_string(args, "value"));
 		video_view_plugin_set_show_subtitle(player, value);
+	} else if (g_str_equal(method, "setKeepScreenOn")) {
+		VideoViewPlugin* player = video_view_plugin_get_player(args, true);
+		const bool value = fl_value_get_bool(fl_value_lookup_string(args, "value"));
+		video_view_plugin_set_keep_screen_on(player, value);
 	} else if (g_str_equal(method, "overrideTrack")) {
 		VideoViewPlugin* player = video_view_plugin_get_player(args, true);
 		const uint8_t typeId = fl_value_get_int(fl_value_lookup_string(args, "groupId"));

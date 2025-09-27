@@ -6,26 +6,74 @@
  */
 if (typeof VideoViewPlugin !== 'function') {
 	class VideoViewPlugin {
-		static version = '1.2.3';
-
-		/** @param {number} id */
-		static getInstance = id => this.#instances.get(id);
-
-		/** @type {Map<number, VideoViewPlugin>} */
-		static #instances = new Map();
-		static #nextId = 0;
-
+		static version = '1.2.4';
 		static #isApple = navigator.vendor.startsWith('Apple');
-
 		static #hasMSE = typeof ManagedMediaSource === 'function' || typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function';
-
+		static #nextId = 0;
 		static #unmuteOption = {
 			capture: true,
 			passive: true
 		};
 
+		/** @type {WakeLockSentinel | Promise<WakeLockSentinel> | null} */
+		static #wakeLock = document.addEventListener('visibilitychange', async () => {
+			if (document.visibilityState === 'visible') {
+				while (this.#wakeLock instanceof Promise) {
+					await this.#wakeLock;
+				}
+				if (this.#wakeLockRefs.size > 0) {
+					this.#lockScreen();
+				}
+			}
+		}) ?? null;
+
+		/** @type {Set<number>} */
+		static #wakeLockRefs = new Set();
+
+		/** @type {Map<number, VideoViewPlugin>} */
+		static #instances = new Map();
+
 		/** @param {TextTrack} track */
 		static #isSubtitle = track => ['subtitles', 'captions', 'forced'].includes(track.kind);
+
+		/** @param {number} id */
+		static getInstance = id => this.#instances.get(id);
+
+		/**
+		 * @param {number} id 
+		 * @param {boolean} enable
+		 */
+		static #requestWakeLock = async (id, enable) => {
+			while (this.#wakeLock instanceof Promise) {
+				await this.#wakeLock;
+			}
+			if (enable && !this.#wakeLockRefs.has(id) || !enable && this.#wakeLockRefs.has(id)) {
+				if (enable) {
+					this.#wakeLockRefs.add(id);
+					this.#lockScreen();
+				} else if (this.#wakeLockRefs.delete(id) && this.#wakeLockRefs.size === 0 && this.#wakeLock) {
+					this.#wakeLock.release();
+					this.#wakeLock = null;
+				}
+			}
+		};
+
+		static #lockScreen = async () => {
+			if (!this.#wakeLock) {
+				try {
+					this.#wakeLock = navigator.wakeLock.request('screen');
+					const wakeLock = await this.#wakeLock;
+					wakeLock.addEventListener('release', () => {
+						if (this.#wakeLock === wakeLock) {
+							this.#wakeLock = null;
+						}
+					});
+					this.#wakeLock = wakeLock;
+				} catch {
+					this.#wakeLock = null;
+				}
+			}
+		};
 
 		/**
 		 * @param {TextTrackList|AudioTrackList} trackList
@@ -105,6 +153,8 @@ if (typeof VideoViewPlugin !== 'function') {
 		#subtitleOnChange = 0;
 		#audioOnChange = 0;
 		#fitWidth = false;
+		#hasVideo = false;
+		#keepScreenOn = false;
 
 		/** 
 		 * 0: idle, 1: opening, 2: ready, 3: playing
@@ -213,11 +263,20 @@ if (typeof VideoViewPlugin !== 'function') {
 			return -1;
 		};
 
-		#sendSize = () => this.#sendMessage({
-			event: 'videoSize',
-			width: this.#dom.videoWidth,
-			height: this.#dom.videoHeight
-		});
+		#sendSize = () => {
+			const newHasVideo = this.#dom.videoWidth > 0 && this.#dom.videoHeight > 0;
+			if (newHasVideo !== this.#hasVideo) {
+				this.#hasVideo = newHasVideo;
+				if (this.#state > 2 && this.#keepScreenOn) {
+					VideoViewPlugin.#requestWakeLock(this.#id, this.#hasVideo);
+				}
+			}
+			this.#sendMessage({
+				event: 'videoSize',
+				width: this.#dom.videoWidth,
+				height: this.#dom.videoHeight
+			});
+		};
 
 		#sendPosition = () => this.#sendMessage({
 			event: 'position',
@@ -311,9 +370,10 @@ if (typeof VideoViewPlugin !== 'function') {
 			this.#unmute();
 			this.#state = 0;
 			this.#source = '';
-			this.#streaming = false;
+			this.#streaming = this.#hasVideo = false;
 			this.#playTime = 0;
 			this.#position = 0;
+			VideoViewPlugin.#requestWakeLock(this.#id, false);
 			if (this.#shaka) {
 				this.#shaka.destroy();
 				this.#shaka = null;
@@ -340,9 +400,11 @@ if (typeof VideoViewPlugin !== 'function') {
 			this.#dom = null;
 		};
 
-		#play = () => {
+		#play = async () => {
 			const state = this.#state;
-			this.#dom.play().catch(e => {
+			try {
+				await this.#dom.play();
+			} catch (e) {
 				if (this.#state === state) {
 					// browser may require user interaction to play media with sound
 					// in this case, we can mute the media first and then unmute it when user interacts with the page
@@ -360,7 +422,7 @@ if (typeof VideoViewPlugin !== 'function') {
 						this.#play();
 					}
 				}
-			});
+			}
 		};
 
 		/**
@@ -483,6 +545,9 @@ if (typeof VideoViewPlugin !== 'function') {
 				}
 				if (this.#state === 2) {
 					this.#state = 3;
+					if (this.#keepScreenOn && this.#hasVideo) {
+						VideoViewPlugin.#requestWakeLock(this.#id, true);
+					}
 					this.#sendMessage({
 						event: 'playing',
 						value: true
@@ -500,12 +565,14 @@ if (typeof VideoViewPlugin !== 'function') {
 							this.#play();
 						} else {
 							this.#state = 2;
+							VideoViewPlugin.#requestWakeLock(this.#id, false);
 							this.#playTime = 0;
 						}
 					} else if (e.timeStamp - this.#playTime < 50) { // auto play may stop immediately on chrome
 						this.#play();
 					} else { // paused
 						this.#state = 2;
+						VideoViewPlugin.#requestWakeLock(this.#id, false);
 						this.#playTime = 0;
 						this.#sendMessage({
 							event: 'playing',
@@ -933,6 +1000,14 @@ if (typeof VideoViewPlugin !== 'function') {
 		setShowSubtitle(show) {
 			this.#showSubtitle = show;
 			this.#setSubtitleTrack();
+		}
+
+		/** @param {boolean} keep */
+		setKeepScreenOn(keep) {
+			this.#keepScreenOn = keep;
+			if (this.#state > 2 && this.#hasVideo) {
+				VideoViewPlugin.#requestWakeLock(this.#id, keep);
+			}
 		}
 
 		/** @param {string?} trackId */

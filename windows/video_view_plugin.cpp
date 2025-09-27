@@ -40,6 +40,17 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	static DispatcherQueue dispatcherQueue;
 	static ID3D11Device* d3dDevice;
 	static ID3D11DeviceContext* d3dContext;
+	static set<int64_t> keepScreenOnRefs;
+
+	static void requestKeepScreenOn(const int64_t id, const bool enable) {
+		if (enable) {
+			if (keepScreenOnRefs.insert(id).second && keepScreenOnRefs.size() == 1) {
+				SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+			}
+		} else if (keepScreenOnRefs.erase(id) && keepScreenOnRefs.empty()) {
+			SetThreadExecutionState(ES_CONTINUOUS);
+		}
+	}
 
 	static char lower(const char c) {
 		return c >= 'A' && c <= 'Z' ? c + 32 : c;
@@ -248,12 +259,13 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	uint16_t maxVideoHeight = 0;
 	int16_t overrideAudioTrack = -1;
 	int16_t overrideSubtitleTrack = -1;
+	uint8_t state = 0; //0: idle, 1: opening, 2: ready, 3: playing
 	bool looping = false;
 	bool showSubtitle = false;
 	bool networking = false;
 	bool streaming = false;
 	bool seeking = false;
-	uint8_t state = 0; //0: idle, 1: opening, 2: ready, 3: playing
+	bool keepScreenOn = false;
 
 	int16_t getDefaultAudioTrack(const string& lang) {
 		auto tracks = mediaPlayer.Source().as<MediaPlaybackItem>().AudioTracks();
@@ -599,8 +611,13 @@ public:
 			queueWork([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state > 0) {
+					auto hasVideo = sharedThis->textureBuffer.width > 0 && sharedThis->textureBuffer.height > 0;
 					sharedThis->textureBuffer.width = sharedThis->subTextureBuffer.width = playbackSession.NaturalVideoWidth();
 					sharedThis->textureBuffer.height = sharedThis->subTextureBuffer.height = playbackSession.NaturalVideoHeight();
+					auto newHasVideo = sharedThis->textureBuffer.width > 0 && sharedThis->textureBuffer.height > 0;
+					if (sharedThis->state > 2 && hasVideo != newHasVideo && sharedThis->keepScreenOn) {
+						sharedThis->requestKeepScreenOn(sharedThis->textureId, newHasVideo);
+					}
 					if (sharedThis->eventSink) {
 						sharedThis->eventSink->Success(EncodableMap{
 							{ string("event"), string("videoSize") },
@@ -743,6 +760,7 @@ public:
 						sharedThis->mediaPlayer.Play();
 					} else {
 						sharedThis->state = 2;
+						sharedThis->requestKeepScreenOn(sharedThis->textureId, false);
 					}
 					if (sharedThis->eventSink) {
 						sharedThis->eventSink->Success(EncodableMap{
@@ -825,6 +843,7 @@ public:
 	void close() {
 		state = 0;
 		textureBuffer.width = textureBuffer.height = subTextureBuffer.width = subTextureBuffer.height = 0;
+		requestKeepScreenOn(textureId, false);
 		if (videoSurface) {
 			videoSurface.Close();
 			videoSurface = nullptr;
@@ -858,6 +877,9 @@ public:
 		if (state == 2) {
 			state = 3;
 			mediaPlayer.Play();
+			if (keepScreenOn && textureBuffer.width > 0 && textureBuffer.height > 0) {
+				requestKeepScreenOn(textureId, true);
+			}
 		}
 	}
 
@@ -865,6 +887,7 @@ public:
 		if (state > 2) {
 			state = 2;
 			mediaPlayer.Pause();
+			requestKeepScreenOn(textureId, false);
 		}
 	}
 
@@ -967,6 +990,15 @@ public:
 		}
 	}
 
+	void setKeepScreenOn(bool enable) {
+		if (enable != keepScreenOn) {
+			keepScreenOn = enable;
+			if (state > 2 && textureBuffer.width > 0 && textureBuffer.height > 0) {
+				requestKeepScreenOn(textureId, enable);
+			}
+		}
+	}
+
 	void overrideTrack(MediaTrackKind kind, int16_t trackId, bool enabled) {
 		if (state > 1) {
 			auto item = mediaPlayer.Source().as<MediaPlaybackItem>();
@@ -996,6 +1028,7 @@ ID3D11Device* VideoController::d3dDevice = nullptr;
 CreateDispatcherQueueControllerFunc VideoController::CreateDispatcherQueueController = nullptr;
 DispatcherQueueController VideoController::dispatcherController = nullptr;
 DispatcherQueue VideoController::dispatcherQueue = nullptr;
+set<int64_t> VideoController::keepScreenOnRefs;
 
 class VideoViewPlugin : public Plugin {
 	MethodChannel<EncodableValue>* methodChannel;
@@ -1092,6 +1125,11 @@ public:
 				auto& player = players[args.at(Id).LongValue()];
 				auto show = get<bool>(args.at(Value));
 				player->setShowSubtitle(show);
+			} else if (methodName == "setKeepScreenOn") {
+				auto& args = get<EncodableMap>(*call.arguments());
+				auto& player = players[args.at(Id).LongValue()];
+				auto enable = get<bool>(args.at(Value));
+				player->setKeepScreenOn(enable);
 			} else if (methodName == "overrideTrack") {
 				auto& args = get<EncodableMap>(*call.arguments());
 				auto& player = players[args.at(Id).LongValue()];

@@ -1,8 +1,11 @@
+# 1.2.4
+- add an option to keep screen on while playing video.
+
 # 1.2.3
-- improve live stream handling
+- improve live stream handling.
 
 # 1.2.2
-- convert logo file to webp format
+- convert logo file to webp format.
 
 # 1.2.1
 - fix a bug may cause `objectFit` not working as expected.

@@ -20,7 +20,7 @@ ___
 ### Demo
 You may try the [online demo](https://xxoo.github.io/flutter_video_view/), or run the demo app locally by cloning this repository:
 ```shell
-git clone https://github.com/xxoo/flutter_video_view.git
+git clone -c core.symlinks=true https://github.com/xxoo/flutter_video_view.git
 cd flutter_video_view/example
 ```
 For basic usage, just run:

@@ -130,6 +130,7 @@ abstract class VideoController {
     bool? autoPlay,
     int? position,
     bool? showSubtitle,
+    bool? keepScreenOn,
     String? preferredSubtitleLanguage,
     String? preferredAudioLanguage,
     int? maxBitRate,
@@ -146,6 +147,7 @@ abstract class VideoController {
       autoPlay: autoPlay,
       position: position,
       showSubtitle: showSubtitle,
+      keepScreenOn: keepScreenOn,
       preferredSubtitleLanguage: preferredSubtitleLanguage,
       preferredAudioLanguage: preferredAudioLanguage,
       maxBitRate: maxBitRate,
@@ -177,6 +179,9 @@ abstract class VideoController {
   final playbackState = VideoControllerProperty(
     VideoControllerPlaybackState.closed,
   );
+
+  /// Whether to keep the screen on while playing video.
+  final keepScreenOn = VideoControllerProperty(false);
 
   /// The current presentation mode of the video.
   /// The value is always [VideoControllerDisplayMode.normal] on native platforms.
@@ -293,6 +298,7 @@ abstract class VideoController {
     bool? autoPlay,
     int? position,
     bool? showSubtitle,
+    bool? keepScreenOn,
     String? preferredSubtitleLanguage,
     String? preferredAudioLanguage,
     int? maxBitRate,
@@ -338,6 +344,9 @@ abstract class VideoController {
     }
     if (showSubtitle != null) {
       setShowSubtitle(showSubtitle);
+    }
+    if (keepScreenOn != null) {
+      setKeepScreenOn(keepScreenOn);
     }
   }
 
@@ -404,6 +413,9 @@ abstract class VideoController {
   /// Force the player to select a subtitle track. Or cancel existing override.
   /// [trackId] should be a key of [VideoControllerMediaInfo.subtitleTracks].
   bool setOverrideSubtitle(String? trackId);
+
+  /// Set whether to keep the screen on when playing video.
+  bool setKeepScreenOn(bool keepOn);
 
   /// Set video display mode.
   /// This API only works on web.
