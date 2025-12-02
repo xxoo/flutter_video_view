@@ -1022,7 +1022,7 @@ public:
 		}
 	}
 };
-auto VideoController::supported = false;
+bool VideoController::supported = false;
 ID3D11DeviceContext* VideoController::d3dContext = nullptr;
 ID3D11Device* VideoController::d3dDevice = nullptr;
 CreateDispatcherQueueControllerFunc VideoController::CreateDispatcherQueueController = nullptr;
