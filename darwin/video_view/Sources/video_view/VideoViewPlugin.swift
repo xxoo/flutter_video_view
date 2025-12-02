@@ -476,7 +476,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 
 #if os(macOS)
 	private var displayLink: CVDisplayLink?
-	private func displlayCallback(outputTime: CVTimeStamp) {
+	private func displayCallback(outputTime: CVTimeStamp) {
 		if let t = videoOutput?.itemTime(for: outputTime),
 		reading != t && rendering != t {
 			textureRegistry.textureFrameAvailable(id)
@@ -550,7 +550,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 						if displayLink != nil {
 							CVDisplayLinkSetOutputCallback(displayLink!, { (displayLink, now, outputTime, flagsIn, flagsOut, context) -> CVReturn in
 								let player: VideoController = Unmanaged.fromOpaque(context!).takeUnretainedValue()
-								player.displlayCallback(outputTime: outputTime.pointee)
+								player.displayCallback(outputTime: outputTime.pointee)
 								return kCVReturnSuccess
 							}, Unmanaged.passUnretained(self).toOpaque())
 							CVDisplayLinkStart(displayLink!)
