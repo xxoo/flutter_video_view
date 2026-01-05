@@ -566,12 +566,12 @@ class VideoViewPlugin : FlutterPlugin, ActivityAware {
 				}
 				"setVolume" -> {
 					val player = players[call.argument<Int>("id")!!]
-					val volume = call.argument<Float>("value")
+					val volume = call.argument<Double>("value")?.toFloat()
 					result.success(player?.setVolume(volume!!))
 				}
 				"setSpeed" -> {
 					val player = players[call.argument<Int>("id")!!]
-					val speed = call.argument<Float>("value")
+					val speed = call.argument<Double>("value")?.toFloat()
 					result.success(player?.setSpeed(speed!!))
 				}
 				"setLooping" -> {
