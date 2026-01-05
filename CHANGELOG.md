@@ -1,3 +1,6 @@
+# 1.2.6
+- fix `setVolume()` and `setSpeed()` not working on Android.
+
 # 1.2.5
 - prevent compilation error on Windows.
 

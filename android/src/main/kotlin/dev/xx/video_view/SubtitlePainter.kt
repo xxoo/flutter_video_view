@@ -128,17 +128,6 @@ class SubtitlePainter(context: Context) {
 	}
 
 	/**
-	 * This method is used instead of {@link TextUtils#equals(CharSequence, CharSequence)} because the
-	 * latter only checks the text of each sequence, and does not check for equality of styling that
-	 * may be embedded within the {@link CharSequence}s.
-	 */
-	private fun areCharSequencesEqual(first: CharSequence?, second: CharSequence?): Boolean {
-		// Some CharSequence implementations don't perform a cheap referential equality check in their
-		// equals methods, so we perform one explicitly here.
-		return first === second || (first != null && first == second)
-	}
-
-	/**
 	 * Draws the provided {@link Cue} into a canvas with the specified styling.
 	 *
 	 * <p>A call to this method is able to use cached results of calculations made during the previous
@@ -168,7 +157,7 @@ class SubtitlePainter(context: Context) {
 			}
 			windowColor = if (cue.windowColorSet) cue.windowColor else style.windowColor
 		}
-		if (areCharSequencesEqual(this.cueText, cue.text)
+		if (this.cueText == cue.text
 			&& Objects.equals(this.cueTextAlignment, cue.textAlignment)
 			&& this.cueBitmap == cue.bitmap
 			&& this.cueLine == cue.line

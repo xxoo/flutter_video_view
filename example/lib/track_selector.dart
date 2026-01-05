@@ -14,7 +14,7 @@ class TrackSelector extends StatefulWidget {
 class _TrackSelectorViewState extends State<TrackSelector> {
   final _player = VideoController(
     source:
-        'https://playertest.longtailvideo.com/adaptive/elephants_dream_v4/index.m3u8',
+        'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8',
     cancelableNotification: true,
     //position: 300000,
     //autoPlay: true,

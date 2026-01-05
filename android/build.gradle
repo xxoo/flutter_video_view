@@ -1,5 +1,5 @@
 group 'dev.xx.video_view'
-version '1.2.5'
+version '1.2.6'
 
 buildscript {
 	repositories {
@@ -8,8 +8,8 @@ buildscript {
 	}
 
 	dependencies {
-		classpath 'com.android.tools.build:gradle:8.13.1'
-		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21"
+		classpath 'com.android.tools.build:gradle:8.13.2'
+		classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0"
 	}
 }
 
@@ -40,11 +40,11 @@ android {
 	}
 
 	dependencies {
-		implementation "androidx.media3:media3-ui:[1.8,1.9)"
-		implementation "androidx.media3:media3-exoplayer:[1.8,1.9)"
-		implementation "androidx.media3:media3-exoplayer-hls:[1.8,1.9)"
-		implementation "androidx.media3:media3-exoplayer-dash:[1.8,1.9)"
-		implementation "androidx.media3:media3-exoplayer-smoothstreaming:[1.8,1.9)"
+		implementation "androidx.media3:media3-ui:[1.9,1.10)"
+		implementation "androidx.media3:media3-exoplayer:[1.9,1.10)"
+		implementation "androidx.media3:media3-exoplayer-hls:[1.9,1.10)"
+		implementation "androidx.media3:media3-exoplayer-dash:[1.9,1.10)"
+		implementation "androidx.media3:media3-exoplayer-smoothstreaming:[1.9,1.10)"
 	}
 
 	compileSdk = 36
