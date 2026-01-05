@@ -10,7 +10,7 @@ HtmlElementView makeWidget(
 ) {
   (player as VideoControllerImplementation).setStyle(videoFit, backgroundColor);
   return HtmlElementView(
-    viewType: 'video_view',
+    viewType: 'VideoViewPlugin',
     creationParams: player.id,
     hitTestBehavior: PlatformViewHitTestBehavior.transparent,
   );

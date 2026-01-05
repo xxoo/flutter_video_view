@@ -22,6 +22,7 @@ You may try the [online demo](https://xxoo.github.io/flutter_video_view/), or ru
 ```shell
 git clone -c core.symlinks=true https://github.com/xxoo/flutter_video_view.git
 cd flutter_video_view/example
+flutter pub get
 ```
 For basic usage, just run:
 ```shell
@@ -132,22 +133,24 @@ ___
 ### Supported media formats
 
 ***For user who only cares about Android and iOS, the following formats are supported without condition:***
-| **Type**          | **Formats**         |
-| ----------------- | ------------------- |
-| Video Codec       | H.264, H.265        |
-| Audio Codec       | AAC, MP3            |
-| Container Format  | MP4, TS             |
-| Subtitle Format   | WebVTT, CEA-608/708 |
-| Transfer Protocol | HTTP, HLS, LL-HLS   |
+| **Type**         | **Formats**          |
+| ---------------- | -------------------- |
+| Video Codec      | h.264, h.265         |
+| Audio Codec      | aac, mp3             |
+| Container Format | mp4, ts              |
+| Subtitle Format  | WebVTT, CEA-608/708  |
+| Stream Protocol  | HLS, LL-HLS          |
+| URL Scheme       | http(s), file, asset |
 
 ***A more complete list with conditions:***
-| **Type**          | **Formats**                                        |
-| ----------------- | -------------------------------------------------- |
-| Video Codec       | H.264, H.265(HEVC)[^h265], AV1[^apple]             |
-| Audio Codec       | AAC, MP3                                           |
-| Container Format  | MP4, TS, WebM[^apple]                              |
-| Subtitle Format   | WebVTT[^vtt], CEA-608/708                          |
-| Transfer Protocol | HTTP, HLS, LL-HLS, DASH[^avplayer], MSS[^avplayer] |
+| **Type**         | **Formats**                                  |
+| ---------------- | -------------------------------------------- |
+| Video Codec      | h.264, h.265[^h265], av1[^apple]             |
+| Audio Codec      | aac, mp3                                     |
+| Container Format | mp4, ts, webm[^apple]                        |
+| Subtitle Format  | WebVTT[^vtt], CEA-608/708                    |
+| Stream Protocol  | HLS, LL-HLS, DASH[^avplayer], MSS[^avplayer] |
+| URL Scheme       | http(s), file, asset                         |
 ___
 
 ### How to specify format manually
@@ -171,7 +174,7 @@ final example2 = 'https://example.com/video.m3u8#.mpd';
 [^mediaplayer]: `MediaPlayer` may lead to crash on certain Windows builds when rendering subtitles.
 [^mpv]: `video_view` requires `mpv`(v0.4+) or `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `mpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
 [^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) v4.15+ to enable HLS, DASH, MSS support on web platforms.
-[^h265]: Windows user may need to install a free [H.265 decoder](https://apps.microsoft.com/detail/9n4wgh0z6vhq) from Microsoft Store. Web platforms may lack H.265 support except for Apple webkit.
+[^h265]: Windows user may need to install a free [h.265 decoder](https://apps.microsoft.com/detail/9n4wgh0z6vhq) from Microsoft Store. Web platforms may lack h.265 support except for Apple webkit.
 [^apple]: Apple platforms may lack WebM and AV1 support.
 [^vtt]: WebVTT subtitles within HLS are not supported by Linux backend.
 [^avplayer]: DASH and MSS are not supported by iOS/macOS backend.

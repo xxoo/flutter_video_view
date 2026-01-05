@@ -4,14 +4,14 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'video_view'
-  s.version          = '1.2.4'
+  s.version          = '1.2.5'
   s.summary          = 'A lightweight media player for Flutter.'
   s.description      = <<-DESC
 A lightweight media player with subtitle rendering and audio track switching support, leveraging system or app-level components for seamless playback.
                        DESC
   s.homepage         = 'http://github.com/xxoo/video_view'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'xxoo' => 'http://github.com/xxoo' }
+  s.author           = { 'Xiao Shen' => 'http://github.com/xxoo' }
 
   s.source           = { :path => '.' }
   s.source_files     = 'video_view/Sources/video_view/**/*.swift'

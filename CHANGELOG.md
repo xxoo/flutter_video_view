@@ -1,3 +1,6 @@
+# 1.2.5
+- prevent compilation error on Windows.
+
 # 1.2.4
 - add an option to keep screen on while playing video.
 

@@ -6,7 +6,7 @@
  */
 if (typeof VideoViewPlugin !== 'function') {
 	class VideoViewPlugin {
-		static version = '1.2.4';
+		static version = '1.2.5';
 		static #isApple = navigator.vendor.startsWith('Apple');
 		static #hasMSE = typeof ManagedMediaSource === 'function' || typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function';
 		static #nextId = 0;

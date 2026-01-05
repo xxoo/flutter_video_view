@@ -7,11 +7,11 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 extension type VideoViewPlugin._(JSObject _) implements JSObject {
   static void registerWith(
     Registrar registrar,
-  ) => platformViewRegistry.registerViewFactory('video_view', (
+  ) => platformViewRegistry.registerViewFactory('VideoViewPlugin', (
     _, {
     Object? params,
   }) {
-    const requiredVersion = '1.2.4';
+    const requiredVersion = '1.2.5';
     if (version != requiredVersion) {
       Zone.current.handleUncaughtError(
         'VideoViewPlugin.js version: $version. Required: $requiredVersion.\nPlease try cleaning the browser cache or using "dart run video_view:webinit" to update.',
