@@ -81,11 +81,15 @@ class VideoControllerImplementation extends VideoController {
                     loading.value) {
                   final width = e['width'] as double;
                   final height = e['height'] as double;
+                  final rotation = (e['rotation'] as num?)?.toInt() ?? 0;
                   if (width != videoSize.value.width ||
                       height != videoSize.value.height) {
                     videoSize.value = width > 0 && height > 0
                         ? Size(width, height)
                         : Size.zero;
+                  }
+                  if (rotation != videoRotation.value) {
+                    videoRotation.value = rotation;
                   }
                 }
               } else if (eventName == 'position') {
@@ -509,6 +513,7 @@ class VideoControllerImplementation extends VideoController {
     _seeking = false;
     mediaInfo.value = null;
     videoSize.value = Size.zero;
+    videoRotation.value = 0;
     position.value = 0;
     bufferRange.value = VideoControllerBufferRange.empty;
     finishedTimes.value = 0;

@@ -166,6 +166,10 @@ abstract class VideoController {
   /// This value is Size.zero by default, and may change during playback.
   final videoSize = VideoControllerProperty(Size.zero);
 
+  /// The rotation of the current video in degrees (0, 90, 180, or 270).
+  /// This value indicates the rotation metadata from the video file.
+  final videoRotation = VideoControllerProperty(0);
+
   /// The error message of the player.
   /// It's null before an error occurs.
   final error = VideoControllerProperty<String?>(null);
@@ -242,6 +246,7 @@ abstract class VideoController {
   late final _properties = [
     mediaInfo,
     videoSize,
+    videoRotation,
     position,
     error,
     loading,

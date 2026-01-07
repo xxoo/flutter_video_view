@@ -447,8 +447,29 @@ class VideoController(
 	override fun onVideoSizeChanged(videoSize: VideoSize) {
 		super.onVideoSizeChanged(videoSize)
 		if (state > 0U) {
-			val width = (videoSize.width * videoSize.pixelWidthHeightRatio).roundToInt()
-			val height = videoSize.height
+			// Get rotation from video format metadata
+			val videoFormat = exoPlayer.videoFormat
+			val rotationDegrees = videoFormat?.rotationDegrees ?: 0
+
+			// Calculate base dimensions with pixel aspect ratio
+			val baseWidth = (videoSize.width * videoSize.pixelWidthHeightRatio).roundToInt()
+			val baseHeight = videoSize.height
+
+			// Handle rotation by swapping dimensions when needed
+			// ExoPlayer only applies rotation automatically with hardware decoder on API 21+
+			// For consistency across all decoders, we handle rotation in the UI layer
+			val width: Int
+			val height: Int
+
+			if (rotationDegrees == 90 || rotationDegrees == 270) {
+				// Swap dimensions for 90/270 degree rotations
+				width = baseHeight
+				height = baseWidth
+			} else {
+				width = baseWidth
+				height = baseHeight
+			}
+
 			val newHasVideo = width > 0 && height > 0
 			if (newHasVideo != hasVideo) {
 				hasVideo = newHasVideo
@@ -457,12 +478,14 @@ class VideoController(
 				}
 			}
 			if (hasVideo) {
+				surfaceProducer.setSize(baseWidth, baseHeight)
 				subSurfaceProducer.setSize(width, height)
 			}
 			eventSink?.success(mapOf(
 				"event" to "videoSize",
 				"width" to width.toFloat(),
-				"height" to height.toFloat()
+				"height" to height.toFloat(),
+				"rotation" to rotationDegrees
 			))
 		}
 	}

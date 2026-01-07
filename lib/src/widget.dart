@@ -170,6 +170,7 @@ class _VideoViewState extends State<VideoView> {
     }
     _runOnCreated();
     _controller.videoSize.addListener(_update);
+    _controller.videoRotation.addListener(_update);
     _controller.showSubtitle.addListener(_update);
     if (kIsWeb) {
       _controller.displayMode.addListener(_fullscreenChange);
@@ -182,6 +183,7 @@ class _VideoViewState extends State<VideoView> {
       _controller.dispose();
     } else if (!_controller.disposed) {
       _controller.videoSize.removeListener(_update);
+      _controller.videoRotation.removeListener(_update);
       _controller.showSubtitle.removeListener(_update);
       if (kIsWeb) {
         _controller.displayMode.removeListener(_fullscreenChange);
