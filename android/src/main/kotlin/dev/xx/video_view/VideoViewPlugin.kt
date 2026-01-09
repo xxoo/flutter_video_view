@@ -65,8 +65,8 @@ class VideoController(
 		eventChannel.setStreamHandler(null)
 		handler.removeCallbacksAndMessages(null)
 		exoPlayer.release()
-		surfaceProducer.release()
-		subSurfaceProducer.release()
+		tryRelease(surfaceProducer)
+		tryRelease(subSurfaceProducer)
 		eventSink?.endOfStream()
 	}
 
@@ -461,6 +461,7 @@ class VideoController(
 			}
 			eventSink?.success(mapOf(
 				"event" to "videoSize",
+				"rotation" to if (surfaceProducer.handlesCropAndRotation()) 0 else (exoPlayer.videoFormat?.rotationDegrees ?: 0) / 90,
 				"width" to width.toFloat(),
 				"height" to height.toFloat()
 			))
@@ -650,4 +651,11 @@ class VideoViewPlugin : FlutterPlugin, ActivityAware {
 	override fun onDetachedFromActivityForConfigChanges() {
 		onDetachedFromActivity()
 	}
+}
+
+// to avoid a bug of SurfaceProducer on old Android
+fun tryRelease(surfaceProducer: SurfaceProducer) {
+	try {
+		surfaceProducer.release()
+	} catch (_: Exception) {}
 }

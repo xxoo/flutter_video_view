@@ -110,16 +110,10 @@ class _VideoViewState extends State<VideoView> {
               stack: s,
               library: 'video_view',
               informationCollector: () => <DiagnosticsNode>[
-                DiagnosticsProperty<void Function(VideoController)>(
-                  'onCreate',
-                  widget.onCreated!,
-                ),
-                DiagnosticsProperty<VideoController>(
-                  'VideoController',
-                  _controller,
-                ),
-                DiagnosticsProperty<VideoView>('VideoView', widget),
-                DiagnosticsProperty<State>('State', this),
+                DiagnosticsProperty('onCreate', widget.onCreated!),
+                DiagnosticsProperty('VideoController', _controller),
+                DiagnosticsProperty('VideoView', widget),
+                DiagnosticsProperty('State', this),
               ],
             ),
           );

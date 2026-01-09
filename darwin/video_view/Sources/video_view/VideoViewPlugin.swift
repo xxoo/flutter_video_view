@@ -328,10 +328,12 @@ class VideoController: NSObject, FlutterStreamHandler {
 	}
 
 	private func createOutput() {
-		videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-			String(kCVPixelBufferIOSurfacePropertiesKey): [:],
+		let ioSurfaceProps: [String: Any] = [:]
+		let attributes: [String: Any] = [
+			String(kCVPixelBufferIOSurfacePropertiesKey): ioSurfaceProps,
 			String(kCVPixelBufferPixelFormatTypeKey): kCVPixelFormatType_32BGRA
-		])
+		]
+		videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: attributes)
 		avPlayer.currentItem!.add(videoOutput!)
 	}
 
@@ -393,15 +395,15 @@ class VideoController: NSObject, FlutterStreamHandler {
 	private func loadEnd() {
 		Task { @MainActor in
 			if state == 1 && avPlayer.currentItem?.status == .readyToPlay {
-				var audioTracks = NSMutableDictionary()
-				var subtitleTracks = NSMutableDictionary()
+				let audioTracks = NSMutableDictionary()
+				let subtitleTracks = NSMutableDictionary()
 				if let characteristics = try? await avPlayer.currentItem!.asset.load(.availableMediaCharacteristicsWithMediaSelectionOptions) {
 					for characteristic in characteristics {
 						if let group = try? await avPlayer.currentItem!.asset.loadMediaSelectionGroup(for: characteristic) {
 							let i = mediaGroups.count
 							for j in 0..<group.options.count {
 								if group.options[j].isPlayable {
-									var tracks: NSMutableDictionary? = if group.options[j].mediaType == .audio {
+									let tracks: NSMutableDictionary? = if group.options[j].mediaType == .audio {
 										audioTracks
 									} else if group.options[j].mediaType == .subtitle || group.options[j].mediaType == .closedCaption || group.options[j].mediaType == .text {
 										subtitleTracks
@@ -543,28 +545,40 @@ class VideoController: NSObject, FlutterStreamHandler {
 			let height = avPlayer.currentItem?.presentationSize.height {
 				if width == 0 || height == 0 {
 					stopVideo()
-				} else {
-					if displayLink == nil {
+				} else if displayLink == nil {
 #if os(macOS)
-						CVDisplayLinkCreateWithActiveCGDisplays(&displayLink)
-						if displayLink != nil {
-							CVDisplayLinkSetOutputCallback(displayLink!, { (displayLink, now, outputTime, flagsIn, flagsOut, context) -> CVReturn in
-								let player: VideoController = Unmanaged.fromOpaque(context!).takeUnretainedValue()
-								player.displayCallback(outputTime: outputTime.pointee)
-								return kCVReturnSuccess
-							}, Unmanaged.passUnretained(self).toOpaque())
-							CVDisplayLinkStart(displayLink!)
-							createOutput()
-						}
-#else
-						displayLink = CADisplayLink(target: self, selector: #selector(displayCallback))
-						displayLink!.add(to: .current, forMode: .common)
+					CVDisplayLinkCreateWithActiveCGDisplays(&displayLink)
+					if displayLink != nil {
+						CVDisplayLinkSetOutputCallback(displayLink!, { (displayLink, now, outputTime, flagsIn, flagsOut, context) -> CVReturn in
+							let player: VideoController = Unmanaged.fromOpaque(context!).takeUnretainedValue()
+							player.displayCallback(outputTime: outputTime.pointee)
+							return kCVReturnSuccess
+						}, Unmanaged.passUnretained(self).toOpaque())
+						CVDisplayLinkStart(displayLink!)
 						createOutput()
+					}
+#else
+					displayLink = CADisplayLink(target: self, selector: #selector(displayCallback))
+					displayLink!.add(to: .current, forMode: .common)
+					createOutput()
 #endif
+				}
+				var rotation: UInt8 = 0
+				if let transform = avPlayer.currentItem!.asset.tracks(withMediaType: .video).first?.preferredTransform {
+					switch (transform.a, transform.b, transform.c, transform.d) {
+					case (0, 1, -1, 0):
+						rotation = 1
+					case (-1, 0, 0, -1):
+						rotation = 2
+					case (0, -1, 1, 0):
+						rotation = 3
+					default:
+						break
 					}
 				}
 				eventSink?([
 					"event": "videoSize",
+					"rotation": rotation,
 					"width": width,
 					"height": height
 				])

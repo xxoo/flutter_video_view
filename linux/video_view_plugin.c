@@ -263,7 +263,7 @@ static void video_view_plugin_send_buffer(const VideoViewPlugin* self, int64_t p
 }
 
 static void video_view_plugin_set_inhibit(VideoViewPlugin* self, const bool enable) {
-	if (enable && self->inhibit_cookie != 0 || !enable && self->inhibit_cookie == 0) {
+	if ((enable && self->inhibit_cookie != 0) || (!enable && self->inhibit_cookie == 0)) {
 		return;
 	}
 	GApplication* app = g_application_get_default();

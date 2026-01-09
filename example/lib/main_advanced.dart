@@ -20,42 +20,32 @@ class _AppViewState extends State<AppView> {
   @override
   build(_) => Scaffold(
     appBar: AppBar(title: const Text('video_view advanced example')),
-    body: _buildBody(),
+    body: switch (_appRoute) {
+      AppRoute.trackSelector => const TrackSelector(),
+      AppRoute.videoList => makeVideoList(),
+      AppRoute.videoPlayer => const VideoPlayer(),
+    },
     bottomNavigationBar: BottomNavigationBar(
-      items: AppRoute.values.map(_buildBottomNavigationBarItem).toList(),
+      items: AppRoute.values
+          .map(
+            (AppRoute route) => switch (route) {
+              AppRoute.trackSelector => const BottomNavigationBarItem(
+                icon: Icon(Icons.track_changes),
+                label: 'Track Selector',
+              ),
+              AppRoute.videoList => const BottomNavigationBarItem(
+                icon: Icon(Icons.view_stream),
+                label: 'Video List',
+              ),
+              AppRoute.videoPlayer => const BottomNavigationBarItem(
+                icon: Icon(Icons.smart_display),
+                label: 'Video Player',
+              ),
+            },
+          )
+          .toList(),
       currentIndex: _appRoute.index,
       onTap: (index) => setState(() => _appRoute = AppRoute.values[index]),
     ),
   );
-
-  Widget _buildBody() {
-    switch (_appRoute) {
-      case AppRoute.trackSelector:
-        return const TrackSelector();
-      case AppRoute.videoList:
-        return makeVideoList();
-      case AppRoute.videoPlayer:
-        return const VideoPlayer();
-    }
-  }
-
-  BottomNavigationBarItem _buildBottomNavigationBarItem(AppRoute route) {
-    switch (route) {
-      case AppRoute.trackSelector:
-        return const BottomNavigationBarItem(
-          icon: Icon(Icons.track_changes),
-          label: 'Track Selector',
-        );
-      case AppRoute.videoList:
-        return const BottomNavigationBarItem(
-          icon: Icon(Icons.view_stream),
-          label: 'Video List',
-        );
-      case AppRoute.videoPlayer:
-        return const BottomNavigationBarItem(
-          icon: Icon(Icons.smart_display),
-          label: 'Video Player',
-        );
-    }
-  }
 }

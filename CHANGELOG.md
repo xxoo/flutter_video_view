@@ -1,3 +1,7 @@
+# 1.2.7
+- fix video rotation handling on iOS/macOS and Android API29+.
+- fix texture release issue on older Android versions.
+
 # 1.2.6
 - fix `setVolume()` and `setSpeed()` not working on Android.
 

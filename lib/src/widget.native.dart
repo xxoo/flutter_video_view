@@ -4,6 +4,12 @@ import 'player.native.dart';
 
 FittedBox makeWidget(VideoController player, BoxFit videoFit, _) {
   final subId = (player as VideoControllerImplementation).subId;
+  final video = player.rotation > 0
+      ? RotatedBox(
+          quarterTurns: player.rotation,
+          child: Texture(textureId: player.id!),
+        )
+      : Texture(textureId: player.id!);
   return FittedBox(
     fit: videoFit,
     clipBehavior: Clip.hardEdge,
@@ -11,11 +17,11 @@ FittedBox makeWidget(VideoController player, BoxFit videoFit, _) {
       width: player.videoSize.value.width,
       height: player.videoSize.value.height,
       child: subId == null || !player.showSubtitle.value
-          ? Texture(textureId: player.id!)
+          ? video
           : Stack(
               fit: StackFit.passthrough,
               children: [
-                Texture(textureId: player.id!),
+                video,
                 Texture(textureId: subId),
               ],
             ),
