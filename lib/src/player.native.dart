@@ -20,9 +20,9 @@ class VideoControllerImplementation extends VideoController {
   int? get subId => _subId;
   int? _subId;
 
-  // The rotation of the video in 90 degree increments.
-  int get rotation => _rotation;
-  int _rotation = 0;
+  // The orientation of the video in 0 to 7.
+  int get orientation => _orientation;
+  int _orientation = 0;
 
   StreamSubscription? _eventSubscription;
   String? _source;
@@ -85,11 +85,11 @@ class VideoControllerImplementation extends VideoController {
                     loading.value) {
                   final width = e['width'] as double;
                   final height = e['height'] as double;
-                  final rotation = e['rotation'] as int? ?? 0;
-                  if (_rotation != rotation ||
+                  final orientation = e['orientation'] as int? ?? 0;
+                  if (_orientation != orientation ||
                       width != videoSize.value.width ||
                       height != videoSize.value.height) {
-                    _rotation = rotation;
+                    _orientation = orientation;
                     videoSize.value = width > 0 && height > 0
                         ? Size(width, height)
                         : Size.zero;
@@ -513,7 +513,7 @@ class VideoControllerImplementation extends VideoController {
   }
 
   void _close() {
-    _rotation = 0;
+    _orientation = 0;
     _seeking = false;
     mediaInfo.value = null;
     videoSize.value = Size.zero;

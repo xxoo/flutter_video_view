@@ -143,14 +143,14 @@ ___
 | URL Scheme       | http(s), file, asset |
 
 ***A more complete list with conditions:***
-| **Type**         | **Formats**                                  |
-| ---------------- | -------------------------------------------- |
-| Video Codec      | h.264, h.265[^h265], av1[^apple]             |
-| Audio Codec      | aac, mp3                                     |
-| Container Format | mp4, ts, webm[^apple]                        |
-| Subtitle Format  | WebVTT[^vtt], CEA-608/708                    |
-| Stream Protocol  | HLS, LL-HLS, DASH[^avplayer], MSS[^avplayer] |
-| URL Scheme       | http(s), file, asset                         |
+| **Type**         | **Formats**                                          |
+| ---------------- | ---------------------------------------------------- |
+| Video Codec      | h.264, h.265[^h265], av1[^apple]                     |
+| Audio Codec      | aac, mp3                                             |
+| Container Format | mp4, ts, webm[^apple]                                |
+| Subtitle Format  | WebVTT[^vtt], CEA-608/708                            |
+| Stream Protocol  | HLS, LL-HLS, DASH[^avplayer], MSS[^avplayer][^shaka] |
+| URL Scheme       | http(s), file, asset                                 |
 ___
 
 ### How to specify format manually
@@ -173,7 +173,7 @@ final example2 = 'https://example.com/video.m3u8#.mpd';
 [^subtitle]: Only internal subtitle tracks are supported.
 [^mediaplayer]: `MediaPlayer` may lead to crash on certain Windows builds when rendering subtitles.
 [^mpv]: `video_view` requires `mpv`(v0.4+) or `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `mpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
-[^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) v4.15+ to enable HLS, DASH, MSS support on web platforms.
+[^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) to enable HLS and DASH support on web platforms. For MSS support, please use [ShakaPlayer v4.x](https://cdn.jsdelivr.net/npm/shaka-player@4/dist/shaka-player.compiled.js) instead.
 [^h265]: Windows user may need to install a free [h.265 decoder](https://apps.microsoft.com/detail/9n4wgh0z6vhq) from Microsoft Store. Web platforms may lack h.265 support except for Apple webkit.
 [^apple]: Apple platforms may lack WebM and AV1 support.
 [^vtt]: WebVTT subtitles within HLS are not supported by Linux backend.

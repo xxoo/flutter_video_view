@@ -1,3 +1,7 @@
+# 1.2.8
+- fix video flip handling on iOS/macOS.
+- fix performance issue while loading multiple videos on iOS/macOS.
+
 # 1.2.7
 - fix video rotation handling on iOS/macOS and Android API29+.
 - fix texture release issue on older Android versions.

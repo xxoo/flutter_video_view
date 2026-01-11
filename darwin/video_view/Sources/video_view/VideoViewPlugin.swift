@@ -35,6 +35,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 	private var reading: CMTime?
 	private var rendering: CMTime?
 	private var state: UInt8 = 0 //0: idle, 1: opening, 2: ready, 3: playing
+	private var orientation: UInt8 = 0
 	private var source: String?
 	private var mediaGroups: [AVMediaSelectionGroup] = []
 	private var maxWidth = 0.0
@@ -155,6 +156,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 
 	func close() {
 		state = 0
+		orientation = 0
 		position = .zero
 		bufferPosition = .zero
 		avPlayer.pause()
@@ -424,6 +426,28 @@ class VideoController: NSObject, FlutterStreamHandler {
 						}
 					}
 				}
+				if let videos = try? await avPlayer.currentItem!.asset.loadTracks(withMediaType: .video) {
+					if let transform = videos.first?.preferredTransform {
+					 	switch (transform.a, transform.b, transform.c, transform.d) {
+					 	case (0, 1, -1, 0):
+						 	orientation = 1
+				 	 	case (-1, 0, 0, -1):
+				 		 	orientation = 2
+				 	 	case (0, -1, 1, 0):
+					 	 	orientation = 3
+					 	case (-1, 0, 0, 1):
+						 	orientation = 4
+					 	case (0, 1, 1, 0):
+						 	orientation = 5
+					 	case (1, 0, 0, -1):
+						 	orientation = 6
+					 	case (0, -1, -1, 0):
+						 	orientation = 7
+					 	default:
+						 	break
+					 	}
+				 	}
+				}
 				avPlayer.volume = volume
 				state = 2
 				eventSink?([
@@ -563,22 +587,9 @@ class VideoController: NSObject, FlutterStreamHandler {
 					createOutput()
 #endif
 				}
-				var rotation: UInt8 = 0
-				if let transform = avPlayer.currentItem!.asset.tracks(withMediaType: .video).first?.preferredTransform {
-					switch (transform.a, transform.b, transform.c, transform.d) {
-					case (0, 1, -1, 0):
-						rotation = 1
-					case (-1, 0, 0, -1):
-						rotation = 2
-					case (0, -1, 1, 0):
-						rotation = 3
-					default:
-						break
-					}
-				}
 				eventSink?([
 					"event": "videoSize",
-					"rotation": rotation,
+					"orientation": orientation,
 					"width": width,
 					"height": height
 				])

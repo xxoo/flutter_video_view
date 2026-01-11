@@ -461,7 +461,7 @@ class VideoController(
 			}
 			eventSink?.success(mapOf(
 				"event" to "videoSize",
-				"rotation" to if (surfaceProducer.handlesCropAndRotation()) 0 else (exoPlayer.videoFormat?.rotationDegrees ?: 0) / 90,
+				"orientation" to if (surfaceProducer.handlesCropAndRotation()) 0 else (exoPlayer.videoFormat?.rotationDegrees ?: 0) / 90,
 				"width" to width.toFloat(),
 				"height" to height.toFloat()
 			))
