@@ -24,24 +24,28 @@ import android.graphics.Paint
 import android.graphics.Paint.Join
 import android.graphics.Paint.Style
 import android.graphics.Rect
+import android.text.BidiFormatter
 import android.text.Layout.Alignment
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import android.text.TextUtils
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.util.DisplayMetrics
-import androidx.core.graphics.withTranslation
 import androidx.core.content.withStyledAttributes
+import androidx.core.graphics.withTranslation
 import androidx.media3.common.text.Cue
-import androidx.media3.common.util.Assertions
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
+import com.google.common.base.Joiner
+import com.google.common.base.Splitter
+import java.util.Arrays
 import java.util.Objects
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -186,7 +190,7 @@ class SubtitlePainter(context: Context) {
 			return
 		}
 
-		this.cueText = cue.text
+		this.cueText = if (BidiUtils.containsRtl(cue.text)) BidiUtils.wrapText(cue.text!!) else cue.text
 		this.cueTextAlignment = cue.textAlignment
 		this.cueBitmap = cue.bitmap
 		this.cueLine = cue.line
@@ -211,10 +215,8 @@ class SubtitlePainter(context: Context) {
 		this.parentBottom = cueBoxBottom
 
 		if (isTextCue) {
-			Assertions.checkNotNull(cueText)
 			setupTextLayout()
 		} else {
-			Assertions.checkNotNull(cueBitmap)
 			setupBitmapLayout()
 		}
 		drawLayout(canvas, isTextCue)
@@ -404,8 +406,6 @@ class SubtitlePainter(context: Context) {
 		if (isTextCue) {
 			drawTextLayout(canvas)
 		} else {
-			Assertions.checkNotNull(bitmapRect)
-			Assertions.checkNotNull(cueBitmap)
 			drawBitmapLayout(canvas)
 		}
 	}
@@ -511,5 +511,158 @@ object SubtitleViewUtils {
 			}
 		}
 		return cueBuilder.build()
+	}
+}
+
+/**
+ * Utility class for handling bidirectional (BiDi) text rendering.
+ *
+ *
+ * This class provides methods to check for right-to-left (RTL) characters in a text and to wrap
+ * text lines for proper BiDi rendering using [BidiFormatter].
+ */
+@UnstableApi
+internal object BidiUtils {
+	private val LF_SPLITTER: Splitter = Splitter.on("\n")
+	private val CRLF_SPLITTER: Splitter = Splitter.on("\r\n")
+	private val LF_JOINER: Joiner = Joiner.on("\n")
+	private const val TAG = "BidiUtils"
+
+	/**
+	 * Checks whether the given [CharSequence] contains any characters with right-to-left (RTL)
+	 * directionality.
+	 *
+	 *
+	 * This method inspects each character's Unicode directionality and returns `true` if at
+	 * least one character is classified as RTL. This includes characters with the following
+	 * directionalities:
+	 *
+	 *
+	 *  * [Character.DIRECTIONALITY_RIGHT_TO_LEFT]
+	 *  * [Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC]
+	 *  * [Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING]
+	 *  * [Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE]
+	 *
+	 *
+	 * @param input the input [CharSequence] to analyze
+	 * @return `true` if the input contains at least one RTL character; `false` otherwise
+	 */
+	@JvmStatic
+	fun containsRtl(input: CharSequence?): Boolean {
+		if (input == null) {
+			return false
+		}
+		val length = input.length
+		var offset = 0
+		while (offset < length) {
+			val codePoint = Character.codePointAt(input, offset)
+			val dir = Character.getDirectionality(codePoint)
+			if (dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT || dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC || dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING || dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE) {
+				return true
+			}
+			offset += Character.charCount(codePoint)
+		}
+		return false
+	}
+
+	/**
+	 * Applies bidirectional (BiDi) Unicode wrapping to each line of the given [CharSequence].
+	 *
+	 *
+	 * This method ensures that text containing both left-to-right (LTR) and right-to-left (RTL)
+	 * scripts is displayed correctly by wrapping each line using [BidiFormatter.unicodeWrap].
+	 * It forces LTR context for wrapping and preserves spans and line breaks.
+	 *
+	 * @param input the input text as a [CharSequence], possibly containing mixed-direction text
+	 * @return a [CharSequence] with each line wrapped for proper bidi rendering
+	 */
+	@JvmStatic
+	fun wrapText(input: CharSequence): CharSequence {
+		val bidiFormatter = BidiFormatter.getInstance()
+		var spannedInput: Spanned? = null
+		var spans: Array<Any>? = null
+		var spanStarts: IntArray? = null
+		var spanEnds: IntArray? = null
+
+		if (input is Spanned) {
+			// Preserve span in the input text.
+			spannedInput = input
+			spans = spannedInput.getSpans<Any>(0, input.length, Any::class.java)
+			// Create arrays to track the start and end of each span after wrapping.
+			spanStarts = IntArray(spans.size)
+			spanEnds = IntArray(spans.size)
+			Arrays.fill(spanStarts, -1)
+			Arrays.fill(spanEnds, -1)
+		}
+
+		// Determine the end-of-line (EOL) sequence for splitting the input text.
+		val lines: MutableList<String>?
+		val eolLength: Int
+		if (input.toString().contains("\r\n")) {
+			lines = CRLF_SPLITTER.splitToList(input)
+			eolLength = 2
+		} else {
+			lines = LF_SPLITTER.splitToList(input)
+			eolLength = 1
+		}
+
+		val wrappedLines: MutableList<String> = ArrayList(lines.size)
+
+		// Calculate the offset of each span after wrapping
+		var spanUpdate = 0
+		var lineStart = 0
+		for (line in lines) {
+			// According to unicodeWrap documentation, this will either add 2 more characters or none
+			val wrappedLine = bidiFormatter.unicodeWrap(line, TextDirectionHeuristics.LTR)
+			if (spans != null) {
+				val diff = wrappedLine.length - line.length
+				if (diff > 0) {
+					spanUpdate++
+				}
+				for (j in spans.indices) {
+					// Each span start or end is updated only once
+					if ((spanStarts!![j] < 0)
+						&& (spannedInput!!.getSpanStart(spans[j]) >= lineStart)
+						&& (spannedInput.getSpanStart(spans[j]) < lineStart + line.length)
+					) {
+						spanStarts[j] = spanUpdate
+					}
+					if ((spanEnds!![j] < 0)
+						&& ((spannedInput!!.getSpanEnd(spans[j]) - 1) >= lineStart)
+						&& ((spannedInput.getSpanEnd(spans[j]) - 1) < lineStart + line.length)
+					) {
+						spanEnds[j] = spanUpdate
+					}
+				}
+				lineStart += line.length + eolLength
+				if (diff > 0) {
+					spanUpdate++
+				}
+			}
+			wrappedLines.add(wrappedLine)
+		}
+
+		// Create a new SpannableStringBuilder with the wrapped lines.
+		val wrapped = SpannableStringBuilder(LF_JOINER.join(wrappedLines))
+
+		if (spans != null) {
+			// Reapply original spans to the wrapped lines.
+			for (i in spans.indices) {
+				val start = spannedInput!!.getSpanStart(spans[i]) + spanStarts!![i]
+				val end = spannedInput.getSpanEnd(spans[i]) + spanEnds!![i]
+				val flags = spannedInput.getSpanFlags(spans[i])
+				if ((start >= 0) && (start < wrapped.length) && (end >= 0) && (end <= wrapped.length)) {
+					// Only set the span if the start and end are within bounds of the wrapped text.
+					wrapped.setSpan(spans[i], start, end, flags)
+				} else {
+					Log.w(
+						TAG,
+						"Span out of bounds: start=" + start + ",end=" + end + ",len=" + wrapped.length
+					)
+				}
+			}
+		}
+
+		return wrapped
 	}
 }

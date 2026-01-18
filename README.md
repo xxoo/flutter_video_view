@@ -122,7 +122,7 @@ ___
 
 | **Platform** | **Version** | **Backend**                                                                  |
 | ------------ | ----------- | ---------------------------------------------------------------------------- |
-| Android      | 6+          | [ExoPlayer](https://developer.android.com/media/media3/exoplayer)            |
+| Android      | 7+          | [ExoPlayer](https://developer.android.com/media/media3/exoplayer)            |
 | iOS          | 15+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/) |
 | macOS        | 12+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/) |
 | Windows | 10+ | [MediaPlayer](https://learn.microsoft.com/uwp/api/windows.media.playback.mediaplayer)[^mediaplayer] |

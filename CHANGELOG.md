@@ -1,3 +1,7 @@
+# 1.2.9
+- support gradle 9.0 on Android.
+- improve subtitle rendering on Android.
+
 # 1.2.8
 - fix video flip handling on iOS/macOS.
 - fix performance issue while loading multiple videos on iOS/macOS.
