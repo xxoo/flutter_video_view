@@ -587,7 +587,7 @@ internal object BidiUtils {
 		if (input is Spanned) {
 			// Preserve span in the input text.
 			spannedInput = input
-			spans = spannedInput.getSpans<Any>(0, input.length, Any::class.java)
+			spans = spannedInput.getSpans(0, input.length, Any::class.java)
 			// Create arrays to track the start and end of each span after wrapping.
 			spanStarts = IntArray(spans.size)
 			spanEnds = IntArray(spans.size)

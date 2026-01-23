@@ -6,10 +6,11 @@
  */
 if (typeof VideoViewPlugin !== 'function') {
 	class VideoViewPlugin {
-		static version = '1.2.9';
+		static version = '1.2.10';
 		static #isApple = navigator.vendor.startsWith('Apple');
 		static #hasMSE = typeof ManagedMediaSource === 'function' || typeof MediaSource === 'function' && typeof MediaSource.isTypeSupported === 'function';
 		static #nextId = 0;
+		static #shakaPolyfilled = false;
 		static #unmuteOption = {
 			capture: true,
 			passive: true
@@ -813,6 +814,10 @@ if (typeof VideoViewPlugin !== 'function') {
 				};
 				cType = types[m[m.length - 1].toLowerCase()];
 				if (self.shaka && VideoViewPlugin.#hasMSE && (!VideoViewPlugin.#isApple || cType !== types['.m3u8'])) {
+					if (!VideoViewPlugin.#shakaPolyfilled) {
+						shaka.polyfill.installAll();
+						VideoViewPlugin.#shakaPolyfilled = true;
+					}
 					this.#shaka = new shaka.Player();
 				}
 			}

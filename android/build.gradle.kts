@@ -1,5 +1,5 @@
 group = "dev.xx.video_view"
-version = "1.2.9"
+version = "1.2.10"
 
 plugins {
 	id("com.android.library")
@@ -8,6 +8,10 @@ plugins {
 android {
 	namespace = "dev.xx.video_view"
 	compileSdk = flutter.compileSdkVersion
+
+	defaultConfig {
+		minSdk = flutter.minSdkVersion
+	}
 
 	compileOptions {
 		sourceCompatibility = JavaVersion.VERSION_17
@@ -22,11 +26,12 @@ android {
 }
 
 dependencies {
-	implementation("androidx.media3:media3-ui:[1.9,1.10)")
-	implementation("androidx.media3:media3-exoplayer:[1.9,1.10)")
-	implementation("androidx.media3:media3-exoplayer-hls:[1.9,1.10)")
-	implementation("androidx.media3:media3-exoplayer-dash:[1.9,1.10)")
-	implementation("androidx.media3:media3-exoplayer-smoothstreaming:[1.9,1.10)")
+	val media3Version = "[1.9,1.10)"
+	implementation("androidx.media3:media3-ui:$media3Version")
+	implementation("androidx.media3:media3-exoplayer:$media3Version")
+	implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
+	implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
+	implementation("androidx.media3:media3-exoplayer-smoothstreaming:$media3Version")
 }
 
 repositories {
@@ -34,7 +39,7 @@ repositories {
 	mavenCentral()
 }
 
-if (GradleVersion.current() < GradleVersion.version("9.0")) {
+if (extensions.findByName("kotlin") == null) {
 	apply(plugin = "kotlin-android")
 	extensions.getByName("android").withGroovyBuilder {
 		"kotlinOptions" {

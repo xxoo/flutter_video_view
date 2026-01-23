@@ -2,7 +2,8 @@
 
 <p align="center">
 	<img src="https://img.shields.io/pub/v/video_view" alt="pub version">
-	<img src="https://img.shields.io/pub/points/video_view" alt="pub points">
+	<img src="https://img.shields.io/pub/likes/video_view" alt="pub likes">
+	<img src="https://img.shields.io/github/stars/xxoo/flutter_video_view" alt="github stars">
 	<img src="https://img.shields.io/pub/dm/video_view" alt="pub downloads">
 </p>
 

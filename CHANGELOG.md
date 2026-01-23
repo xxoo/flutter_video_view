@@ -1,3 +1,6 @@
+# 1.2.10
+- support latest shaka player version on web platforms.
+
 # 1.2.9
 - support gradle 9.0 on Android.
 - improve subtitle rendering on Android.
