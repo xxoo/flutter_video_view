@@ -34,12 +34,12 @@ class _VideoItemState extends State<_VideoItem> {
     id: '${widget.index}',
     child: Container(
       margin: widget.index < videoSources.length
-          ? const EdgeInsets.only(bottom: 16)
+          ? const .only(bottom: 16)
           : null,
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: Stack(
-          alignment: Alignment.center,
+          alignment: .center,
           children: [
             VideoView(
               looping: true,
@@ -56,7 +56,7 @@ class _VideoItemState extends State<_VideoItem> {
               },
             ),
             if (_player?.mediaInfo.value != null &&
-                _player!.videoSize.value == Size.zero)
+                _player!.videoSize.value == .zero)
               const Text(
                 'Audio only',
                 style: TextStyle(color: Colors.white, fontSize: 24),

@@ -45,7 +45,7 @@ class _AppViewState extends State<AppView> {
           )
           .toList(),
       currentIndex: _appRoute.index,
-      onTap: (index) => setState(() => _appRoute = AppRoute.values[index]),
+      onTap: (index) => setState(() => _appRoute = .values[index]),
     ),
   );
 }

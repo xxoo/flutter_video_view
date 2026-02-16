@@ -1,3 +1,7 @@
+# 1.3.0
+- fix video not showing on Linux when flutter >= 3.38
+- **breaking change:** require flutter 3.38 or higher.
+
 # 1.2.10
 - support latest shaka player version on web platforms.
 

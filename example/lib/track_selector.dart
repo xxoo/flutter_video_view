@@ -42,7 +42,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
       }),
     );
     _player.bufferRange.addListener(() {
-      if (_player.bufferRange.value != VideoControllerBufferRange.empty) {
+      if (_player.bufferRange.value != .empty) {
         debugPrint(
           'position: ${_player.position.value} buffer start: ${_player.bufferRange.value.start} buffer end: ${_player.bufferRange.value.end}',
         );
@@ -63,12 +63,12 @@ class _TrackSelectorViewState extends State<TrackSelector> {
   @override
   build(_) => SingleChildScrollView(
     child: Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: .min,
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: .min,
             children: [
               TextField(
                 controller: _inputController,
@@ -76,7 +76,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                   labelText: 'Load Media',
                   hintText: 'Please input a media URL',
                 ),
-                keyboardType: TextInputType.url,
+                keyboardType: .url,
                 onSubmitted: (value) {
                   if (value.isNotEmpty && Uri.tryParse(value) != null) {
                     _player.open(value);
@@ -84,12 +84,12 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                 },
               ),
               AspectRatio(
-                aspectRatio: _player.videoSize.value == Size.zero
+                aspectRatio: _player.videoSize.value == .zero
                     ? 16 / 9
                     : _player.videoSize.value.width /
                           _player.videoSize.value.height,
                 child: Stack(
-                  alignment: Alignment.center,
+                  alignment: .center,
                   children: [
                     VideoView(controller: _player),
                     if (_player.loading.value)
@@ -130,13 +130,9 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.play_arrow),
-                    isSelected:
-                        _player.playbackState.value ==
-                        VideoControllerPlaybackState.playing,
+                    isSelected: _player.playbackState.value == .playing,
                     selectedIcon: const Icon(Icons.pause),
-                    onPressed: () =>
-                        _player.playbackState.value ==
-                            VideoControllerPlaybackState.playing
+                    onPressed: () => _player.playbackState.value == .playing
                         ? _player.pause()
                         : _player.play(),
                   ),
@@ -156,11 +152,9 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                   ),
                   const Spacer(),
                   Icon(
-                    _player.playbackState.value ==
-                            VideoControllerPlaybackState.playing
+                    _player.playbackState.value == .playing
                         ? Icons.play_arrow
-                        : _player.playbackState.value ==
-                              VideoControllerPlaybackState.paused
+                        : _player.playbackState.value == .paused
                         ? Icons.pause
                         : Icons.stop,
                     size: 16.0,
@@ -171,17 +165,14 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                     IconButton(
                       icon: const Icon(Icons.picture_in_picture),
                       onPressed: () => _player.setDisplayMode(
-                        _player.displayMode.value ==
-                                VideoControllerDisplayMode.pictureInPicture
-                            ? VideoControllerDisplayMode.normal
-                            : VideoControllerDisplayMode.pictureInPicture,
+                        _player.displayMode.value == .pictureInPicture
+                            ? .normal
+                            : .pictureInPicture,
                       ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.fullscreen),
-                      onPressed: () => _player.setDisplayMode(
-                        VideoControllerDisplayMode.fullscreen,
-                      ),
+                      onPressed: () => _player.setDisplayMode(.fullscreen),
                     ),
                   ],
                 ],
@@ -190,7 +181,7 @@ class _TrackSelectorViewState extends State<TrackSelector> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+          padding: const .only(left: 16, right: 16, bottom: 16),
           child: Wrap(
             spacing: 16,
             runSpacing: 16,
@@ -227,41 +218,36 @@ class _TrackSelectorViewState extends State<TrackSelector> {
               DropdownMenu(
                 width: 160,
                 dropdownMenuEntries: const [
-                  DropdownMenuEntry(value: "0", label: "Unlimited"),
-                  DropdownMenuEntry(value: "4194304", label: "4Mbps"),
-                  DropdownMenuEntry(value: "2097152", label: "2Mbps"),
-                  DropdownMenuEntry(value: "1048576", label: "1Mbps"),
+                  DropdownMenuEntry(value: 0, label: "Unlimited"),
+                  DropdownMenuEntry(value: 4194304, label: "4Mbps"),
+                  DropdownMenuEntry(value: 2097152, label: "2Mbps"),
+                  DropdownMenuEntry(value: 1048576, label: "1Mbps"),
                 ],
                 label: const Text(
                   "Max bitrate",
                   style: TextStyle(fontSize: 14),
                 ),
-                onSelected: (value) => _player.setMaxBitRate(int.parse(value!)),
+                onSelected: (value) => _player.setMaxBitRate(value ?? 0),
               ),
-              DropdownMenu(
+              DropdownMenu<Size>(
                 width: 160,
                 dropdownMenuEntries: const [
-                  DropdownMenuEntry(value: "0x0", label: "Unlimited"),
-                  DropdownMenuEntry(value: "1920x1080", label: "1080p"),
-                  DropdownMenuEntry(value: "1280x720", label: "720p"),
-                  DropdownMenuEntry(value: "640x360", label: "360p"),
+                  DropdownMenuEntry(value: .zero, label: "Unlimited"),
+                  DropdownMenuEntry(value: Size(1920, 1080), label: "1080p"),
+                  DropdownMenuEntry(value: Size(1280, 720), label: "720p"),
+                  DropdownMenuEntry(value: Size(640, 360), label: "360p"),
                 ],
                 label: const Text(
                   "Max Resolution",
                   style: TextStyle(fontSize: 14),
                 ),
-                onSelected: (value) {
-                  final parts = value!.split('x');
-                  _player.setMaxResolution(
-                    Size(double.parse(parts[0]), double.parse(parts[1])),
-                  );
-                },
+                onSelected: (value) => _player.setMaxResolution(value ?? .zero),
               ),
             ],
           ),
         ),
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: .center,
           children: [
             Checkbox(
               value: _player.showSubtitle.value,
@@ -269,14 +255,14 @@ class _TrackSelectorViewState extends State<TrackSelector> {
             ),
             Text(
               'Subtitle Tracks: ${_player.mediaInfo.value?.subtitleTracks.length ?? 0}',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              style: const TextStyle(fontWeight: .bold, fontSize: 14),
             ),
           ],
         ),
         _buildListView(false),
         Text(
           'Audio Tracks: ${_player.mediaInfo.value?.audioTracks.length ?? 0}',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          style: const TextStyle(fontWeight: .bold, fontSize: 14),
         ),
         _buildListView(true),
       ],
@@ -296,8 +282,8 @@ class _TrackSelectorViewState extends State<TrackSelector> {
     return SizedBox(
       height: isAudio ? 134 : 82,
       child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(left: 16, right: 16, top: 6, bottom: 16),
+        scrollDirection: .horizontal,
+        padding: const .only(left: 16, right: 16, top: 6, bottom: 16),
         itemCount: ids.length,
         itemBuilder: (_, index) {
           final id = ids.elementAt(index);
@@ -314,11 +300,11 @@ class _TrackSelectorViewState extends State<TrackSelector> {
                 : _player.setOverrideSubtitle(selected ? null : id),
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: .circular(4),
                 color: selected ? Colors.blue : Colors.blueGrey,
               ),
-              padding: const EdgeInsets.all(6),
-              alignment: Alignment.center,
+              padding: const .all(6),
+              alignment: .center,
               child: Text(
                 isAudio
                     ? '''${audioTrack!.title ?? 'unknown title'}

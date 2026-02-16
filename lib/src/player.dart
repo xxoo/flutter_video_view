@@ -21,11 +21,28 @@ class VideoControllerProperty<T> extends AsyncValueNotifier<T> {
 
 /// This type is used by [VideoController.bufferRange].
 class VideoControllerBufferRange {
-  static const empty = VideoControllerBufferRange(0, 0);
+  static const empty = VideoControllerBufferRange._(0, 0);
 
   final int start;
   final int end;
-  const VideoControllerBufferRange(this.start, this.end);
+  const VideoControllerBufferRange._(this.start, this.end);
+
+  factory VideoControllerBufferRange(int start, int end) {
+    if (start < 0) {
+      start = 0;
+    }
+    return end > start ? VideoControllerBufferRange._(start, end) : empty;
+  }
+
+  int get length => end - start;
+
+  @override
+  operator ==(Object other) => other is VideoControllerBufferRange
+      ? other.start == start && other.end == end
+      : false;
+
+  @override
+  get hashCode => Object.hash(start, end);
 }
 
 /// This type is used by [VideoControllerMediaInfo.audioTracks].
@@ -164,7 +181,7 @@ abstract class VideoController {
 
   /// The size of the current video.
   /// This value is Size.zero by default, and may change during playback.
-  final videoSize = VideoControllerProperty(Size.zero);
+  final videoSize = VideoControllerProperty<Size>(.zero);
 
   /// The error message of the player.
   /// It's null before an error occurs.
@@ -176,8 +193,8 @@ abstract class VideoController {
 
   /// The playback state of the player.
   /// It's [VideoControllerPlaybackState.closed] berore a media is opened.
-  final playbackState = VideoControllerProperty(
-    VideoControllerPlaybackState.closed,
+  final playbackState = VideoControllerProperty<VideoControllerPlaybackState>(
+    .closed,
   );
 
   /// Whether to keep the screen on while playing video.
@@ -185,8 +202,8 @@ abstract class VideoController {
 
   /// The current presentation mode of the video.
   /// The value is always [VideoControllerDisplayMode.normal] on native platforms.
-  final displayMode = VideoControllerProperty(
-    VideoControllerDisplayMode.normal,
+  final displayMode = VideoControllerProperty<VideoControllerDisplayMode>(
+    .normal,
   );
 
   /// How many times the player has finished playing the current media.
@@ -195,7 +212,9 @@ abstract class VideoController {
 
   /// The current buffer status of the player.
   /// It is only reported by network media.
-  final bufferRange = VideoControllerProperty(VideoControllerBufferRange.empty);
+  final bufferRange = VideoControllerProperty<VideoControllerBufferRange>(
+    .empty,
+  );
 
   /// The audio track that is overrided by the player.
   final overrideAudio = VideoControllerProperty<String?>(null);
@@ -227,7 +246,7 @@ abstract class VideoController {
   final maxBitRate = VideoControllerProperty(0);
 
   /// Current maximum resolution of the player. [Size.zero] means no limit.
-  final maxResolution = VideoControllerProperty(Size.zero);
+  final maxResolution = VideoControllerProperty<Size>(.zero);
 
   /// The preferred audio language of the player.
   final preferredAudioLanguage = VideoControllerProperty<String?>(null);

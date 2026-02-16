@@ -23,7 +23,7 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
   );
   final _inputController = TextEditingController();
   SubtitleController? _subtitleController;
-  var _videoFit = BoxFit.contain;
+  BoxFit _videoFit = .contain;
 
   void _update() => setState(() {});
 
@@ -31,11 +31,9 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
     if (value.isNotEmpty && Uri.tryParse(value) != null) {
       final response = await get(Uri.parse(value));
       setState(
-        () => _subtitleController = SubtitleController.string(
+        () => _subtitleController = .string(
           response.body,
-          format: value.endsWith('.srt')
-              ? SubtitleFormat.srt
-              : SubtitleFormat.webvtt,
+          format: value.endsWith('.srt') ? .srt : .webvtt,
         ),
       );
     } else {
@@ -57,7 +55,7 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
     _player.looping.addListener(_update);
     _player.autoPlay.addListener(_update);
     _player.bufferRange.addListener(() {
-      if (_player.bufferRange.value != VideoControllerBufferRange.empty) {
+      if (_player.bufferRange.value != .empty) {
         debugPrint(
           'position: ${_player.position.value} buffer start: ${_player.bufferRange.value.start} buffer end: ${_player.bufferRange.value.end}',
         );
@@ -81,12 +79,12 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
   @override
   build(_) => SingleChildScrollView(
     child: Column(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: .min,
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const .all(16),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: .min,
             children: [
               Row(
                 children: [
@@ -96,28 +94,19 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                   ),
                   const Text('Autoplay'),
                   const Spacer(),
-                  DropdownMenu(
+                  DropdownMenu<BoxFit>(
                     width: 150,
                     dropdownMenuEntries: const [
+                      DropdownMenuEntry(value: .contain, label: "Contain"),
+                      DropdownMenuEntry(value: .cover, label: "Cover"),
+                      DropdownMenuEntry(value: .fill, label: "Fill"),
+                      DropdownMenuEntry(value: .fitWidth, label: "Fill Width"),
                       DropdownMenuEntry(
-                        value: BoxFit.contain,
-                        label: "Contain",
-                      ),
-                      DropdownMenuEntry(value: BoxFit.cover, label: "Cover"),
-                      DropdownMenuEntry(value: BoxFit.fill, label: "Fill"),
-                      DropdownMenuEntry(
-                        value: BoxFit.fitWidth,
-                        label: "Fill Width",
-                      ),
-                      DropdownMenuEntry(
-                        value: BoxFit.fitHeight,
+                        value: .fitHeight,
                         label: "Fill Height",
                       ),
-                      DropdownMenuEntry(
-                        value: BoxFit.scaleDown,
-                        label: "Scale Down",
-                      ),
-                      DropdownMenuEntry(value: BoxFit.none, label: "None"),
+                      DropdownMenuEntry(value: .scaleDown, label: "Scale Down"),
+                      DropdownMenuEntry(value: .none, label: "None"),
                     ],
                     label: const Text(
                       "Video Fit",
@@ -143,17 +132,17 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                   labelText: 'Load Subtitle',
                   hintText: 'Please input a subtitle URL',
                 ),
-                keyboardType: TextInputType.url,
+                keyboardType: .url,
                 onSubmitted: _setSubtitle,
               ),
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Stack(
-                  alignment: Alignment.center,
+                  alignment: .center,
                   children: [
                     VideoView(controller: _player, videoFit: _videoFit),
                     if (_player.mediaInfo.value != null &&
-                        _player.videoSize.value == Size.zero)
+                        _player.videoSize.value == .zero)
                       const Text(
                         'Audio only',
                         style: TextStyle(color: Colors.white, fontSize: 24),
@@ -177,37 +166,23 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Text(
-                    _formatDuration(
-                      Duration(milliseconds: _player.position.value),
-                    ),
-                  ),
+                  Text(_formatTime(_player.position.value)),
                   const Spacer(),
                   Text(
                     _player.error.value ??
                         '${_player.videoSize.value.width.toInt()}x${_player.videoSize.value.height.toInt()}',
                   ),
                   const Spacer(),
-                  Text(
-                    _formatDuration(
-                      Duration(
-                        milliseconds: _player.mediaInfo.value?.duration ?? 0,
-                      ),
-                    ),
-                  ),
+                  Text(_formatTime(_player.mediaInfo.value?.duration ?? 0)),
                 ],
               ),
               Row(
                 children: [
                   IconButton(
                     icon: const Icon(Icons.play_arrow),
-                    isSelected:
-                        _player.playbackState.value ==
-                        VideoControllerPlaybackState.playing,
+                    isSelected: _player.playbackState.value == .playing,
                     selectedIcon: const Icon(Icons.pause),
-                    onPressed: () =>
-                        _player.playbackState.value ==
-                            VideoControllerPlaybackState.playing
+                    onPressed: () => _player.playbackState.value == .playing
                         ? _player.pause()
                         : _player.play(),
                   ),
@@ -227,11 +202,9 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                   ),
                   const Spacer(),
                   Icon(
-                    _player.playbackState.value ==
-                            VideoControllerPlaybackState.playing
+                    _player.playbackState.value == .playing
                         ? Icons.play_arrow
-                        : _player.playbackState.value ==
-                              VideoControllerPlaybackState.paused
+                        : _player.playbackState.value == .paused
                         ? Icons.pause
                         : Icons.stop,
                     size: 16.0,
@@ -242,10 +215,9 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
                     IconButton(
                       icon: const Icon(Icons.picture_in_picture),
                       onPressed: () => _player.setDisplayMode(
-                        _player.displayMode.value ==
-                                VideoControllerDisplayMode.pictureInPicture
-                            ? VideoControllerDisplayMode.normal
-                            : VideoControllerDisplayMode.pictureInPicture,
+                        _player.displayMode.value == .pictureInPicture
+                            ? .normal
+                            : .pictureInPicture,
                       ),
                     ),
                     IconButton(
@@ -289,8 +261,8 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
         SizedBox(
           height: 128,
           child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: .horizontal,
+            padding: const .symmetric(horizontal: 16),
             itemCount: videoSources.length,
             itemBuilder: (_, index) => AspectRatio(
               aspectRatio: 16 / 9,
@@ -307,7 +279,8 @@ class _VideoPlayerViewState extends State<VideoPlayer> {
     ),
   );
 
-  String _formatDuration(Duration duration) {
+  String _formatTime(int milliseconds) {
+    final duration = Duration(milliseconds: milliseconds);
     final hours = duration.inHours > 0 ? '${duration.inHours}:' : '';
     final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
     final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');

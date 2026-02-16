@@ -18,8 +18,7 @@ class VideoControllerImplementation extends VideoController {
       final eventName = e['event'] as String;
       if (eventName == 'error') {
         // ignore errors when player is closed
-        if (playbackState.value != VideoControllerPlaybackState.closed ||
-            loading.value) {
+        if (playbackState.value != .closed || loading.value) {
           _source = null;
           error.value = e['value'];
           loading.value = false;
@@ -28,7 +27,7 @@ class VideoControllerImplementation extends VideoController {
       } else if (eventName == 'mediaInfo') {
         if (_source != null && _translateSource(_source!) == e['source']) {
           loading.value = false;
-          playbackState.value = VideoControllerPlaybackState.paused;
+          playbackState.value = .paused;
           mediaInfo.value = VideoControllerMediaInfo(
             (e['duration'] as double).toInt(),
             VideoControllerAudioInfo.batchFromMap(e['audioTracks']),
@@ -40,15 +39,14 @@ class VideoControllerImplementation extends VideoController {
           }
         }
       } else if (eventName == 'videoSize') {
-        if (playbackState.value != VideoControllerPlaybackState.closed ||
-            loading.value) {
+        if (playbackState.value != .closed || loading.value) {
           final width = e['width'] as double;
           final height = e['height'] as double;
           if (width != videoSize.value.width ||
               height != videoSize.value.height) {
             videoSize.value = width > 0 && height > 0
                 ? Size(width, height)
-                : Size.zero;
+                : .zero;
           }
         }
       } else if (eventName == 'position') {
@@ -62,11 +60,10 @@ class VideoControllerImplementation extends VideoController {
         }
       } else if (eventName == 'buffer') {
         if (mediaInfo.value != null) {
-          final start = (e['start'] as double).toInt();
-          final end = (e['end'] as double).toInt();
-          bufferRange.value = start == 0 && end == 0
-              ? VideoControllerBufferRange.empty
-              : VideoControllerBufferRange(start, end);
+          bufferRange.value = VideoControllerBufferRange(
+            (e['start'] as double).toInt(),
+            (e['end'] as double).toInt(),
+          );
         }
       } else if (eventName == 'finished') {
         if (mediaInfo.value != null) {
@@ -75,15 +72,13 @@ class VideoControllerImplementation extends VideoController {
           if (mediaInfo.value!.duration == 0) {
             _close();
           } else if (!looping.value) {
-            playbackState.value = VideoControllerPlaybackState.paused;
+            playbackState.value = .paused;
           }
         }
       } else if (eventName == 'playing') {
         if (mediaInfo.value != null) {
           loading.value = _seeking = _loading = false;
-          playbackState.value = e['value']
-              ? VideoControllerPlaybackState.playing
-              : VideoControllerPlaybackState.paused;
+          playbackState.value = e['value'] ? .playing : .paused;
         }
       } else if (eventName == 'loading') {
         if (mediaInfo.value != null) {
@@ -100,8 +95,7 @@ class VideoControllerImplementation extends VideoController {
       } else if (eventName == 'volume') {
         volume.value = e['value'];
       } else if (eventName == 'displayMode') {
-        displayMode.value =
-            VideoControllerDisplayMode.values[(e['value'] as double).toInt()];
+        displayMode.value = .values[(e['value'] as double).toInt()];
       } else if (eventName == 'showSubtitle') {
         showSubtitle.value = e['value'];
       } else if (eventName == 'overrideAudio') {
@@ -130,8 +124,7 @@ class VideoControllerImplementation extends VideoController {
   close() {
     if (!disposed) {
       _source = null;
-      if (playbackState.value != VideoControllerPlaybackState.closed ||
-          loading.value) {
+      if (playbackState.value != .closed || loading.value) {
         _plugin.close();
         _close();
       }
@@ -153,11 +146,11 @@ class VideoControllerImplementation extends VideoController {
   @override
   play() {
     if (!disposed) {
-      if (playbackState.value == VideoControllerPlaybackState.paused) {
+      if (playbackState.value == .paused) {
         _plugin.play();
         return true;
       } else if (!autoPlay.value &&
-          playbackState.value == VideoControllerPlaybackState.closed &&
+          playbackState.value == .closed &&
           _source != null) {
         setAutoPlay(true);
         return true;
@@ -169,11 +162,11 @@ class VideoControllerImplementation extends VideoController {
   @override
   pause() {
     if (!disposed) {
-      if (playbackState.value == VideoControllerPlaybackState.playing) {
+      if (playbackState.value == .playing) {
         _plugin.pause();
         return true;
       } else if (autoPlay.value &&
-          playbackState.value == VideoControllerPlaybackState.closed &&
+          playbackState.value == .closed &&
           _source != null) {
         setAutoPlay(false);
         return true;
@@ -320,7 +313,7 @@ class VideoControllerImplementation extends VideoController {
 
   @override
   setDisplayMode(value) {
-    if (!disposed && videoSize.value != Size.zero) {
+    if (!disposed && videoSize.value != .zero) {
       return _plugin.setDisplayMode(
         VideoControllerDisplayMode.values.indexOf(value),
       );
@@ -368,13 +361,13 @@ class VideoControllerImplementation extends VideoController {
   void _close() {
     _seeking = _loading = false;
     mediaInfo.value = null;
-    videoSize.value = Size.zero;
+    videoSize.value = .zero;
     position.value = 0;
-    bufferRange.value = VideoControllerBufferRange.empty;
+    bufferRange.value = .empty;
     finishedTimes.value = 0;
-    playbackState.value = VideoControllerPlaybackState.closed;
+    playbackState.value = .closed;
     overrideAudio.value = overrideSubtitle.value = null;
-    displayMode.value = VideoControllerDisplayMode.normal;
+    displayMode.value = .normal;
   }
 }
 

@@ -5,8 +5,8 @@
 #include <gdk/gdkwayland.h>
 #include <gtk/gtk.h>
 #include <epoxy/egl.h>
-#include <epoxy/glx.h>
 #include <mpv/client.h>
+#include <mpv/render.h>
 #include <mpv/render_gl.h>
 #include <unicode/uloc.h>
 
@@ -29,7 +29,14 @@ typedef struct {
 	GArray* videoTracks; // video tracks with id, width, height, bitrate
 	GArray* audioTracks; // audio tracks with id, language
 	GArray* subtitleTracks; // subtitle tracks with id, language
-	GLuint texture;
+	GLuint texture; // Flutter texture (created in Flutter context)
+	GLuint mpvTexture; // mpv render target (created in isolated context)
+	EGLDisplay eglDisplay;
+	EGLContext eglContext;
+	EGLImageKHR eglImage;
+	guint8* swBuffer;
+	size_t swBufferSize;
+	size_t swStride;
 	GLsizei width;
 	GLsizei height;
 	guint inhibit_cookie;
@@ -44,6 +51,7 @@ typedef struct {
 	bool networking;
 	bool seeking;
 	bool keepScreenOn;
+	bool eglRendering;
 } VideoViewPlugin;
 #define VIDEO_VIEW_PLUGIN(obj) (G_TYPE_CHECK_INSTANCE_CAST((obj), video_view_plugin_get_type(), VideoViewPlugin))
 typedef struct {
@@ -53,14 +61,36 @@ G_DEFINE_TYPE(VideoViewPlugin, video_view_plugin, fl_texture_gl_get_type())
 
 /* plugin definitions */
 
+#ifndef eglCreateImageKHR
+typedef EGLImageKHR(*EglCreateImageKhrProc)(EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, const EGLint* attrib_list);
+static EglCreateImageKhrProc eglCreateImageKHR = NULL;
+#endif
+#ifndef eglDestroyImageKHR
+typedef EGLBoolean(*EglDestroyImageKhrProc)(EGLDisplay dpy, EGLImageKHR image);
+static EglDestroyImageKhrProc eglDestroyImageKHR = NULL;
+#endif
+#ifndef glEGLImageTargetTexture2DOES
+typedef void (*GlEglImageTargetTexture2DProc)(GLenum target, GLeglImageOES image);
+static GlEglImageTargetTexture2DProc glEGLImageTargetTexture2DOES = NULL;
+#endif
+
 static GTree* players; // all write operations on the tree are done in the main thread
 static GMutex mutex;   // so we just need to lock the mutex when reading in other threads
 static FlBinaryMessenger* messenger;
 static FlTextureRegistrar* textureRegistrar;
 static FlMethodCodec* codec;
 static FlMethodChannel* methodChannel;
+static FlView* pluginView;
+static GdkGLContext* platformGlContext;
 
 /* player implementation */
+
+typedef struct {
+	EGLDisplay display;
+	EGLContext context;
+	EGLSurface draw;
+	EGLSurface read;
+} VideoViewPluginEglState;
 
 typedef struct {
 	uint16_t id;
@@ -76,12 +106,14 @@ typedef struct {
 	gchar* language[3];
 } VideoViewPluginTrack;
 
+static void video_view_plugin_texture_update_callback(void* id);
+
 static void video_view_plugin_track_free(void* item) {
 	const VideoViewPluginTrack* track = item;
 	g_free(track->language[0]);
 }
 
-static gboolean video_view_plugin_is_eof(const VideoViewPlugin* self) {
+static bool video_view_plugin_is_eof(const VideoViewPlugin* self) {
 	gboolean eof;
 	mpv_get_property(self->mpv, "eof-reached", MPV_FORMAT_FLAG, &eof);
 	return eof;
@@ -214,7 +246,7 @@ static void video_view_plugin_set_max_size(VideoViewPlugin* self) {
 		uint32_t maxBitrate = 0;
 		uint32_t minBitrate = UINT32_MAX;
 		uint16_t minId = 0;
-		for (uint i = 0; i < self->videoTracks->len; i++) {
+		for (uint32_t i = 0; i < self->videoTracks->len; i++) {
 			const VideoViewPluginVideoTrack* data = &g_array_index(self->videoTracks, VideoViewPluginVideoTrack, i);
 			if ((self->maxWidth == 0 || data->width <= self->maxWidth) && (self->maxHeight == 0 || data->height <= self->maxHeight) && (self->maxBitRate == 0 || data->bitrate <= self->maxBitRate) && data->width > maxWidth && data->height > maxHeight && data->bitrate > maxBitrate) {
 				id = data->id;
@@ -284,7 +316,7 @@ static void video_view_plugin_loaded(VideoViewPlugin* self) {
 	mpv_get_property(self->mpv, "track-list/count", MPV_FORMAT_INT64, &count);
 	FlValue* audioTracks = fl_value_new_map();
 	FlValue* subtitleTracks = fl_value_new_map();
-	for (uint i = 0; i < count; i++) {
+	for (uint32_t i = 0; i < count; i++) {
 		gchar* str;
 		gchar p[33];
 		sprintf(p, "track-list/%d/type", i);
@@ -394,9 +426,120 @@ static void video_view_plugin_loaded(VideoViewPlugin* self) {
 	}
 }
 
-static void* video_view_plugin_gl_init(void* addrCtx, const char* name) {
-	void* (*func)(const char*) = addrCtx;
-	return func(name);
+static void* video_view_plugin_init_mpv_gl(void* addrCtx, const char* name) {
+	return eglGetProcAddress(name);
+}
+
+static void video_view_plugin_capture_egl_state(VideoViewPluginEglState* state) {
+	state->display = eglGetCurrentDisplay();
+	state->context = eglGetCurrentContext();
+	state->draw = eglGetCurrentSurface(EGL_DRAW);
+	state->read = eglGetCurrentSurface(EGL_READ);
+}
+
+static void video_view_plugin_restore_egl_state(const VideoViewPluginEglState* state, EGLDisplay fallbackDisplay) {
+	if (state->display != EGL_NO_DISPLAY) {
+		eglMakeCurrent(state->display, state->draw, state->read, state->context);
+	} else if (fallbackDisplay != EGL_NO_DISPLAY) {
+		eglMakeCurrent(fallbackDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+	}
+}
+
+static bool video_view_plugin_make_platform_gl_current() {
+	if (!pluginView) {
+		return false;
+	}
+	GtkWidget* widget = GTK_WIDGET(pluginView);
+	if (!gtk_widget_get_realized(widget)) {
+		return false;
+	}
+	GdkWindow* window = gtk_widget_get_window(widget);
+	if (!window) {
+		return false;
+	}
+	if (!platformGlContext) {
+		GError* error = NULL;
+		platformGlContext = gdk_window_create_gl_context(window, &error);
+		if (error) {
+			g_error_free(error);
+		}
+		if (!platformGlContext) {
+			return false;
+		}
+	}
+	gdk_gl_context_make_current(platformGlContext);
+	return gdk_gl_context_get_current() != NULL;
+}
+
+static bool video_view_plugin_make_isolated_egl_current(const VideoViewPlugin* self) {
+	if (self->eglDisplay != EGL_NO_DISPLAY && self->eglContext != EGL_NO_CONTEXT) {
+		return eglMakeCurrent(self->eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, self->eglContext);
+	}
+	return false;
+}
+
+static bool video_view_plugin_init_isolated_egl_context(VideoViewPlugin* self) {
+	if (self->eglDisplay != EGL_NO_DISPLAY && self->eglContext != EGL_NO_CONTEXT) {
+		return true;
+	}
+
+	EGLDisplay display = eglGetCurrentDisplay();
+	EGLContext context = eglGetCurrentContext();
+	if (display == EGL_NO_DISPLAY || context == EGL_NO_CONTEXT) {
+		return false;
+	}
+
+	eglBindAPI(EGL_OPENGL_ES_API);
+	EGLint configId = 0;
+	if (!eglQueryContext(display, context, EGL_CONFIG_ID, &configId)) {
+		return false;
+	}
+
+	EGLConfig config = NULL;
+	EGLint numConfigs = 0;
+	EGLint configAttribs[] = { EGL_CONFIG_ID, configId, EGL_NONE };
+	if (!eglChooseConfig(display, configAttribs, &config, 1, &numConfigs) || numConfigs <= 0) {
+		return false;
+	}
+
+	EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
+	EGLContext isolatedContext = eglCreateContext(display, config, EGL_NO_CONTEXT, contextAttribs);
+	if (isolatedContext == EGL_NO_CONTEXT) {
+		return false;
+	}
+
+	self->eglDisplay = display;
+	self->eglContext = isolatedContext;
+	return true;
+}
+
+static void video_view_plugin_clear_mpv_gl_resources(VideoViewPlugin* self) {
+	if (self->mpvTexture) {
+		glDeleteTextures(1, &self->mpvTexture);
+		self->mpvTexture = 0;
+	}
+	if (self->fbo.fbo) {
+		glDeleteFramebuffers(1, (GLuint*)&self->fbo.fbo);
+		self->fbo.fbo = 0;
+	}
+	if (self->eglImage != EGL_NO_IMAGE_KHR && self->eglDisplay != EGL_NO_DISPLAY && eglDestroyImageKHR) {
+		eglDestroyImageKHR(self->eglDisplay, self->eglImage);
+		self->eglImage = EGL_NO_IMAGE_KHR;
+	}
+	self->fbo.w = 0;
+	self->fbo.h = 0;
+}
+
+static void video_view_plugin_set_render_callback(VideoViewPlugin* self) {
+	mpv_render_context_set_update_callback(self->mpvRenderContext, video_view_plugin_texture_update_callback, (void*)self->id);
+}
+
+static bool video_view_plugin_create_render_context(VideoViewPlugin* self, mpv_render_param* params) {
+	if (mpv_render_context_create(&self->mpvRenderContext, self->mpv, params) == MPV_ERROR_SUCCESS) {
+		video_view_plugin_set_render_callback(self);
+		return true;
+	}
+	return false;
 }
 
 static void video_view_plugin_texture_update_callback(void* id) {
@@ -432,27 +575,41 @@ static void video_view_plugin_close(VideoViewPlugin* self) {
 
 static void video_view_plugin_open(VideoViewPlugin* self, const gchar* source) {
 	video_view_plugin_close(self);
-	if (!self->mpvRenderContext) {
-		GdkDisplay* display = gdk_display_get_default();
-		if (display) {
-			void* func = NULL;
-			if (GDK_IS_WAYLAND_DISPLAY(display)) {
-				func = eglGetProcAddress;
-			} else if (GDK_IS_X11_DISPLAY(display)) {
-				func = glXGetProcAddressARB;
-			}
-			if (func) {
-				mpv_opengl_init_params gl_init_params = { video_view_plugin_gl_init, func };
-				mpv_render_param params[] = {
-					{ MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_OPENGL },
-					{ MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params },
-					{ MPV_RENDER_PARAM_INVALID, NULL }
-				};
-				if (mpv_render_context_create(&self->mpvRenderContext, self->mpv, params) == MPV_ERROR_SUCCESS) {
-					mpv_render_context_set_update_callback(self->mpvRenderContext, video_view_plugin_texture_update_callback, (void*)self->id);
+	// we try to create EGL render context first since it has better performance
+	if (!self->mpvRenderContext && eglCreateImageKHR && eglDestroyImageKHR && glEGLImageTargetTexture2DOES && (eglGetCurrentContext() != EGL_NO_CONTEXT || video_view_plugin_make_platform_gl_current()) && video_view_plugin_init_isolated_egl_context(self)) {
+		VideoViewPluginEglState flutterState = { 0 };
+		video_view_plugin_capture_egl_state(&flutterState);
+		if (video_view_plugin_make_isolated_egl_current(self)) {
+			mpv_opengl_init_params gl_init_params = { video_view_plugin_init_mpv_gl, NULL };
+			mpv_render_param params[] = {
+				{ MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_OPENGL },
+				{ MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params },
+				{ MPV_RENDER_PARAM_INVALID, NULL },
+				{ MPV_RENDER_PARAM_INVALID, NULL }
+			};
+			GdkDisplay* display = gdk_display_get_default();
+			if (display) {
+				if (GDK_IS_WAYLAND_DISPLAY(display)) {
+					params[2].type = MPV_RENDER_PARAM_WL_DISPLAY;
+					params[2].data = gdk_wayland_display_get_wl_display(display);
+				} else if (GDK_IS_X11_DISPLAY(display)) {
+					params[2].type = MPV_RENDER_PARAM_X11_DISPLAY;
+					params[2].data = gdk_x11_display_get_xdisplay(display);
 				}
 			}
+			if (video_view_plugin_create_render_context(self, params)) {
+				self->eglRendering = true;
+			}
 		}
+		video_view_plugin_restore_egl_state(&flutterState, self->eglDisplay);
+	}
+	// if EGL render context is not available, we will use software rendering
+	if (!self->mpvRenderContext) {
+		mpv_render_param params[] = {
+			{ MPV_RENDER_PARAM_API_TYPE, MPV_RENDER_API_TYPE_SW },
+			{ MPV_RENDER_PARAM_INVALID, NULL }
+		};
+		video_view_plugin_create_render_context(self, params);
 	}
 	if (self->mpvRenderContext) {
 		int result;
@@ -473,13 +630,13 @@ static void video_view_plugin_open(VideoViewPlugin* self, const gchar* source) {
 		} else {
 			g_autoptr(FlValue) evt = fl_value_new_map();
 			fl_value_set_string_take(evt, "event", fl_value_new_string("error"));
-			fl_value_set_string_take(evt, "event", fl_value_new_string(mpv_error_string(result)));
+			fl_value_set_string_take(evt, "value", fl_value_new_string(mpv_error_string(result)));
 			fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
 		}
 	} else {
 		g_autoptr(FlValue) evt = fl_value_new_map();
 		fl_value_set_string_take(evt, "event", fl_value_new_string("error"));
-		fl_value_set_string_take(evt, "value", fl_value_new_string("gl context not available"));
+		fl_value_set_string_take(evt, "value", fl_value_new_string("render context not available"));
 		fl_event_channel_send(self->eventChannel, evt, NULL, NULL);
 	}
 }
@@ -710,7 +867,7 @@ static gboolean video_view_plugin_event_callback(void* id) {
 				// 3) network source
 				gboolean networking;
 				mpv_get_property(self->mpv, "demuxer-via-network", MPV_FORMAT_FLAG, &networking);
-				self->networking = networking == TRUE;
+				self->networking = networking;
 
 				// 4) demuxer-start-time: often large/non-zero for live (DASH/HLS timebase)
 				double demux_start = 0.0;
@@ -749,33 +906,131 @@ static void video_view_plugin_wakeup_callback(void* id) {
 	g_idle_add(video_view_plugin_event_callback, id);
 }
 
+static void video_view_plugin_gen_texture(VideoViewPlugin* self, GLuint* texture, bool imgTarget) {
+	glGenTextures(1, texture);
+	glBindTexture(GL_TEXTURE_2D, *texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	if (imgTarget) {
+		glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, (GLeglImageOES)self->eglImage);
+	} else {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self->width, self->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	}
+}
+
+static void video_view_plugin_new_texture(VideoViewPlugin* self) {
+	if (self->texture) {
+		glDeleteTextures(1, &self->texture);
+	}
+	video_view_plugin_gen_texture(self, &self->texture, self->eglRendering);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	self->fbo.w = self->width;
+	self->fbo.h = self->height;
+}
+
 static gboolean video_view_plugin_texture_populate(FlTextureGL* texture, uint32_t* target, uint32_t* name, uint32_t* width, uint32_t* height, GError** error) {
 	VideoViewPlugin* self = VIDEO_VIEW_PLUGIN(texture);
-	if (self->state > 0 && self->width > 0 && self->height > 0) {
-		if (self->texture == 0 || self->width != self->fbo.w || self->height != self->fbo.h) {
-			if (self->texture) {
-				glDeleteTextures(1, &self->texture);
+	if (self->state > 0 && self->width > 0 && self->height > 0 && self->mpvRenderContext) {
+		if (self->eglRendering) {
+			if (self->texture == 0 || self->mpvTexture == 0 || self->eglImage == EGL_NO_IMAGE_KHR || self->width != self->fbo.w || self->height != self->fbo.h) {
+				if (!video_view_plugin_init_isolated_egl_context(self)) {
+					return FALSE;
+				}
+				VideoViewPluginEglState flutterState = { 0 };
+				video_view_plugin_capture_egl_state(&flutterState);
+				if (flutterState.display == EGL_NO_DISPLAY || flutterState.context == EGL_NO_CONTEXT) {
+					return FALSE;
+				}
+				bool success = false;
+				if (video_view_plugin_make_isolated_egl_current(self)) {
+					video_view_plugin_clear_mpv_gl_resources(self);
+					glGenFramebuffers(1, (GLuint*)&self->fbo.fbo);
+					glBindFramebuffer(GL_FRAMEBUFFER, self->fbo.fbo);
+					video_view_plugin_gen_texture(self, &self->mpvTexture, false);
+					glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self->mpvTexture, 0);
+					if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+						EGLint eglImageAttribs[] = { EGL_NONE };
+						self->eglImage = eglCreateImageKHR(self->eglDisplay, self->eglContext, EGL_GL_TEXTURE_2D_KHR, (EGLClientBuffer)(uint64_t)self->mpvTexture, eglImageAttribs);
+						if (self->eglImage != EGL_NO_IMAGE_KHR) {
+							glBindFramebuffer(GL_FRAMEBUFFER, 0);
+							glBindTexture(GL_TEXTURE_2D, 0);
+							glFlush();
+							success = true;
+						}
+					}
+				}
+				video_view_plugin_restore_egl_state(&flutterState, self->eglDisplay);
+				if (success) {
+					video_view_plugin_new_texture(self);
+				} else {
+					return FALSE;
+				}
 			}
-			if (self->fbo.fbo) {
-				glDeleteFramebuffers(1, (GLuint*)&self->fbo.fbo);
+
+			VideoViewPluginEglState flutterState = { 0 };
+			video_view_plugin_capture_egl_state(&flutterState);
+			bool success = false;
+			if (video_view_plugin_make_isolated_egl_current(self)) {
+				glBindFramebuffer(GL_FRAMEBUFFER, self->fbo.fbo);
+				mpv_render_param params[] = {
+					{ MPV_RENDER_PARAM_OPENGL_FBO, &self->fbo },
+					{ MPV_RENDER_PARAM_INVALID, NULL }
+				};
+				mpv_render_context_render(self->mpvRenderContext, params);
+				glBindFramebuffer(GL_FRAMEBUFFER, 0);
+				glFlush();
+				success = true;
 			}
-			glGenFramebuffers(1, (GLuint*)&self->fbo.fbo);
-			glBindFramebuffer(GL_FRAMEBUFFER, self->fbo.fbo);
-			glGenTextures(1, &self->texture);
-			glBindTexture(GL_TEXTURE_2D, self->texture);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->width, self->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + 0, GL_TEXTURE_2D, self->texture, 0);
-			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+			video_view_plugin_restore_egl_state(&flutterState, self->eglDisplay);
+			if (!success) {
 				return FALSE;
 			}
-			self->fbo.w = self->width;
-			self->fbo.h = self->height;
+		} else {
+			const size_t stride = (size_t)self->width * 4;
+			const size_t requiredSize = stride * (size_t)self->height;
+			if (requiredSize == 0) {
+				return FALSE;
+			}
+			if (requiredSize > self->swBufferSize) {
+				guint8* buffer = g_realloc(self->swBuffer, requiredSize);
+				if (!buffer) {
+					return FALSE;
+				}
+				self->swBuffer = buffer;
+				self->swBufferSize = requiredSize;
+			}
+			self->swStride = stride;
+
+			if (self->texture == 0 || self->width != self->fbo.w || self->height != self->fbo.h) {
+				video_view_plugin_new_texture(self);
+			}
+
+			int swSize[] = { self->width, self->height };
+			char swFormat[] = "rgb0";
+			mpv_render_param params[] = {
+				{ MPV_RENDER_PARAM_SW_SIZE, swSize },
+				{ MPV_RENDER_PARAM_SW_FORMAT, swFormat },
+				{ MPV_RENDER_PARAM_SW_STRIDE, &self->swStride },
+				{ MPV_RENDER_PARAM_SW_POINTER, self->swBuffer },
+				{ MPV_RENDER_PARAM_INVALID, NULL }
+			};
+			mpv_render_context_render(self->mpvRenderContext, params);
+			for (GLsizei y = 0; y < self->height; y++) {
+				guint8* row = self->swBuffer + y * self->swStride;
+				for (GLsizei x = 0; x < self->width; x++) {
+					row[x * 4 + 3] = 0xff;
+				}
+			}
+			GLint oldUnpackAlignment = 4;
+			glGetIntegerv(GL_UNPACK_ALIGNMENT, &oldUnpackAlignment);
+			glBindTexture(GL_TEXTURE_2D, self->texture);
+			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, self->width, self->height, GL_RGBA, GL_UNSIGNED_BYTE, self->swBuffer);
+			glPixelStorei(GL_UNPACK_ALIGNMENT, oldUnpackAlignment);
+			glBindTexture(GL_TEXTURE_2D, 0);
 		}
-		mpv_render_param params[] = {
-			{ MPV_RENDER_PARAM_OPENGL_FBO, &self->fbo },
-			{ MPV_RENDER_PARAM_INVALID, NULL }
-		};
-		mpv_render_context_render(self->mpvRenderContext, params);
 		*target = GL_TEXTURE_2D;
 		*name = self->texture;
 		*width = self->width;
@@ -791,17 +1046,24 @@ static void video_view_plugin_class_init(VideoViewPluginClass* klass) {
 
 static void video_view_plugin_init(VideoViewPlugin* self) {
 	self->texture = 0;
+	self->mpvTexture = 0;
 	self->width = self->height = 0;
 	self->fbo.fbo = 0;
 	self->fbo.w = self->fbo.h = 0;
-	self->fbo.internal_format = GL_RGBA8;
+	self->fbo.internal_format = 0;
+	self->eglDisplay = EGL_NO_DISPLAY;
+	self->eglContext = EGL_NO_CONTEXT;
+	self->eglImage = EGL_NO_IMAGE_KHR;
+	self->swBuffer = NULL;
+	self->swBufferSize = 0;
+	self->swStride = 0;
 	self->speed = 1;
 	self->state = 0;
 	self->position = self->bufferPosition = 0;
 	self->source = NULL;
 	self->preferredAudioLanguage = NULL;
 	self->preferredSubtitleLanguage = NULL;
-	self->looping = self->streaming = self->networking = self->seeking = self->keepScreenOn = false;
+	self->looping = self->streaming = self->networking = self->seeking = self->keepScreenOn = self->eglRendering = false;
 	self->mpvRenderContext = NULL;
 	self->inhibit_cookie = 0;
 }
@@ -848,26 +1110,46 @@ static void video_view_plugin_destroy(void* obj) {
 	g_idle_remove_by_data((void*)self->id);
 	//fl_event_channel_send_end_of_stream(self->eventChannel, NULL, NULL);
 	g_object_unref(self->eventChannel);
+
+	VideoViewPluginEglState previousState = { 0 };
+	video_view_plugin_capture_egl_state(&previousState);
+	bool madeCurrent = video_view_plugin_make_isolated_egl_current(self);
 	if (self->mpvRenderContext) {
 		mpv_render_context_set_update_callback(self->mpvRenderContext, NULL, NULL);
 		mpv_render_context_free(self->mpvRenderContext);
+		self->mpvRenderContext = NULL;
 	}
+	if (madeCurrent) {
+		video_view_plugin_clear_mpv_gl_resources(self);
+	}
+	video_view_plugin_restore_egl_state(&previousState, self->eglDisplay);
+	if (self->fbo.fbo && self->eglContext == EGL_NO_CONTEXT && previousState.context != EGL_NO_CONTEXT) {
+		glDeleteFramebuffers(1, (GLuint*)&self->fbo.fbo);
+		self->fbo.fbo = 0;
+	}
+	self->fbo.w = 0;
+	self->fbo.h = 0;
+	if (self->texture && previousState.context != EGL_NO_CONTEXT) {
+		glDeleteTextures(1, &self->texture);
+	}
+	self->texture = 0;
+	self->mpvTexture = 0;
+	if (self->eglContext != EGL_NO_CONTEXT && self->eglDisplay != EGL_NO_DISPLAY) {
+		eglDestroyContext(self->eglDisplay, self->eglContext);
+	}
+	self->eglContext = EGL_NO_CONTEXT;
+	self->eglDisplay = EGL_NO_DISPLAY;
+	self->eglImage = EGL_NO_IMAGE_KHR;
+
 	mpv_set_wakeup_callback(self->mpv, NULL, NULL);
 	mpv_destroy(self->mpv);
 	g_free(self->source);
 	g_free(self->preferredAudioLanguage);
 	g_free(self->preferredSubtitleLanguage);
+	g_free(self->swBuffer);
 	g_array_free(self->videoTracks, TRUE);
 	g_array_free(self->audioTracks, TRUE);
 	g_array_free(self->subtitleTracks, TRUE);
-	if (self->texture) {
-		glDeleteTextures(1, &self->texture);
-		self->texture = 0;
-	}
-	if (self->fbo.fbo) {
-		glDeleteFramebuffers(1, (GLuint*)&self->fbo.fbo);
-		self->fbo.fbo = 0;
-	}
 	g_object_unref(self);
 }
 
@@ -898,6 +1180,11 @@ static void video_view_plugin_clear() {
 
 static void video_view_plugin_destroy_all(void* data) {
 	video_view_plugin_clear();
+	if (platformGlContext) {
+		g_object_unref(platformGlContext);
+		platformGlContext = NULL;
+	}
+	pluginView = NULL;
 	g_object_unref(methodChannel);
 	g_object_unref(codec);
 	g_mutex_clear(&mutex);
@@ -1004,11 +1291,22 @@ static void video_view_plugin_method_call(FlMethodChannel* channel, FlMethodCall
 /* plugin registration */
 
 void video_view_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
+#ifndef eglCreateImageKHR
+	eglCreateImageKHR = (EglCreateImageKhrProc)eglGetProcAddress("eglCreateImageKHR");
+#endif
+#ifndef eglDestroyImageKHR
+	eglDestroyImageKHR = (EglDestroyImageKhrProc)eglGetProcAddress("eglDestroyImageKHR");
+#endif
+#ifndef glEGLImageTargetTexture2DOES
+	glEGLImageTargetTexture2DOES = (GlEglImageTargetTexture2DProc)eglGetProcAddress("glEGLImageTargetTexture2DOES");
+#endif
 	setlocale(LC_NUMERIC, "C");
 	g_mutex_init(&mutex);
 	players = g_tree_new_full(video_view_plugin_compare_key, NULL, NULL, video_view_plugin_destroy);
 	messenger = fl_plugin_registrar_get_messenger(registrar);
 	textureRegistrar = fl_plugin_registrar_get_texture_registrar(registrar);
+	pluginView = fl_plugin_registrar_get_view(registrar);
+	platformGlContext = NULL;
 	codec = FL_METHOD_CODEC(fl_standard_method_codec_new());
 	methodChannel = fl_method_channel_new(messenger, "VideoViewPlugin", codec);
 	fl_method_channel_set_method_call_handler(methodChannel, video_view_plugin_method_call, NULL, video_view_plugin_destroy_all);

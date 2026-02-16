@@ -53,7 +53,7 @@ ___
 
 ### Sample code
 
-Without controller:
+Default controller:
 ```dart
 import 'package:flutter/widgets.dart';
 import 'package:video_view/video_view.dart';

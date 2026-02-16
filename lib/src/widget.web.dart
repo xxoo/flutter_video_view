@@ -1,17 +1,16 @@
-import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'player.dart';
 import 'player.web.dart';
+import 'widget.dart';
 
-HtmlElementView makeWidget(
-  VideoController player,
-  BoxFit videoFit,
-  Color backgroundColor,
-) {
-  (player as VideoControllerImplementation).setStyle(videoFit, backgroundColor);
+HtmlElementView showVideo(VideoController player, VideoView widget) {
+  (player as VideoControllerImplementation).setStyle(
+    widget.videoFit,
+    widget.backgroundColor,
+  );
   return HtmlElementView(
     viewType: 'VideoViewPlugin',
     creationParams: player.id,
-    hitTestBehavior: PlatformViewHitTestBehavior.transparent,
+    hitTestBehavior: .transparent,
   );
 }

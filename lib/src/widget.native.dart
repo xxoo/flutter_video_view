@@ -1,8 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'player.dart';
 import 'player.native.dart';
+import 'widget.dart';
 
-FittedBox makeWidget(VideoController player, BoxFit videoFit, _) {
+FittedBox showVideo(VideoController player, VideoView widget) {
   Widget video = Texture(
     textureId: (player as VideoControllerImplementation).id!,
   );
@@ -26,20 +27,20 @@ FittedBox makeWidget(VideoController player, BoxFit videoFit, _) {
     };
     video = Transform(
       transform: Matrix4(a, b, 0, 0, c, d, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
-      alignment: Alignment.center,
+      alignment: .center,
       child: video,
     );
   }
   return FittedBox(
-    fit: videoFit,
-    clipBehavior: Clip.hardEdge,
+    fit: widget.videoFit,
+    clipBehavior: .hardEdge,
     child: SizedBox(
       width: player.videoSize.value.width,
       height: player.videoSize.value.height,
       child: player.subId == null || !player.showSubtitle.value
           ? video
           : Stack(
-              fit: StackFit.passthrough,
+              fit: .passthrough,
               children: [
                 video,
                 Texture(textureId: player.subId!),

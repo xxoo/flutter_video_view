@@ -59,9 +59,9 @@ class VideoView extends StatefulWidget {
     this.cancelableNotification,
     this.distinctNotification,
     this.backgroundColor = Colors.black,
-    this.videoFit = BoxFit.contain,
-    this.width = double.infinity,
-    this.height = double.infinity,
+    this.videoFit = .contain,
+    this.width = .infinity,
+    this.height = .infinity,
   });
 
   @override
@@ -75,15 +75,14 @@ class _VideoViewState extends State<VideoView> {
   OverlayEntry? _overlayEntry;
 
   void _fullscreenChange() {
-    if (_controller.displayMode.value !=
-        VideoControllerDisplayMode.fullscreen) {
+    if (_controller.displayMode.value != .fullscreen) {
       _clearOverlay();
     } else if (_overlayEntry == null) {
       _overlayEntry = OverlayEntry(
         builder: (context) => Container(
           color: Colors.transparent,
-          width: double.infinity,
-          height: double.infinity,
+          width: .infinity,
+          height: .infinity,
         ),
       );
       Overlay.of(context, rootOverlay: true).insert(_overlayEntry!);
@@ -190,8 +189,8 @@ class _VideoViewState extends State<VideoView> {
     width: widget.width,
     height: widget.height,
     color: widget.backgroundColor,
-    child: _controller.disposed || _controller.videoSize.value == Size.zero
+    child: _controller.disposed || _controller.videoSize.value == .zero
         ? null
-        : makeWidget(_controller, widget.videoFit, widget.backgroundColor),
+        : showVideo(_controller, widget),
   );
 }

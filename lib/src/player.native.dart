@@ -54,7 +54,7 @@ class VideoControllerImplementation extends VideoController {
       } else {
         _subId = value['subId'];
         _id = value['id'];
-        _eventSubscription = EventChannel('VideoViewPlugin/$id')
+        _eventSubscription = EventChannel('VideoViewPlugin/$_id')
             .receiveBroadcastStream()
             .listen((event) {
               final e = event as Map;
@@ -76,13 +76,11 @@ class VideoControllerImplementation extends VideoController {
                   if (autoPlay.value) {
                     _play();
                   } else {
-                    playbackState.value = VideoControllerPlaybackState.paused;
+                    playbackState.value = .paused;
                   }
                 }
               } else if (eventName == 'videoSize') {
-                if (playbackState.value !=
-                        VideoControllerPlaybackState.closed ||
-                    loading.value) {
+                if (playbackState.value != .closed || loading.value) {
                   final width = e['width'] as double;
                   final height = e['height'] as double;
                   final orientation = e['orientation'] as int? ?? 0;
@@ -92,7 +90,7 @@ class VideoControllerImplementation extends VideoController {
                     _orientation = orientation;
                     videoSize.value = width > 0 && height > 0
                         ? Size(width, height)
-                        : Size.zero;
+                        : .zero;
                   }
                 }
               } else if (eventName == 'position') {
@@ -105,17 +103,14 @@ class VideoControllerImplementation extends VideoController {
                 }
               } else if (eventName == 'buffer') {
                 if (mediaInfo.value != null) {
-                  final start = e['start'] as int;
-                  final end = e['end'] as int;
-                  bufferRange.value = start == 0 && end == 0
-                      ? VideoControllerBufferRange.empty
-                      : VideoControllerBufferRange(start, end);
+                  bufferRange.value = VideoControllerBufferRange(
+                    e['start'] as int,
+                    e['end'] as int,
+                  );
                 }
               } else if (eventName == 'error') {
                 // ignore errors when player is closed
-                if (playbackState.value !=
-                        VideoControllerPlaybackState.closed ||
-                    loading.value) {
+                if (playbackState.value != .closed || loading.value) {
                   _source = null;
                   loading.value = false;
                   error.value = e['value'];
@@ -137,7 +132,7 @@ class VideoControllerImplementation extends VideoController {
                   if (mediaInfo.value!.duration == 0) {
                     _close();
                   } else if (!looping.value) {
-                    playbackState.value = VideoControllerPlaybackState.paused;
+                    playbackState.value = .paused;
                   }
                 }
               }
@@ -161,7 +156,7 @@ class VideoControllerImplementation extends VideoController {
         if (maxBitRate.value > 0) {
           _setMaxBitRate();
         }
-        if (maxResolution.value != Size.zero) {
+        if (maxResolution.value != .zero) {
           _setMaxResolution();
         }
         if (preferredAudioLanguage.value != null) {
@@ -185,8 +180,8 @@ class VideoControllerImplementation extends VideoController {
     if (!disposed) {
       super.dispose();
       _eventSubscription?.cancel();
-      if (id != null) {
-        _methodChannel.invokeMethod('dispose', id);
+      if (_id != null) {
+        _methodChannel.invokeMethod('dispose', _id);
       }
     }
   }
@@ -195,10 +190,8 @@ class VideoControllerImplementation extends VideoController {
   close() {
     if (!disposed) {
       _source = null;
-      if (id != null &&
-          (playbackState.value != VideoControllerPlaybackState.closed ||
-              loading.value)) {
-        _methodChannel.invokeMethod('close', id);
+      if (_id != null && (playbackState.value != .closed || loading.value)) {
+        _methodChannel.invokeMethod('close', _id);
         _close();
       }
       loading.value = false;
@@ -209,10 +202,10 @@ class VideoControllerImplementation extends VideoController {
   open(source) {
     if (!disposed) {
       _source = source;
-      if (id != null) {
+      if (_id != null) {
         error.value = null;
         _close();
-        _methodChannel.invokeMethod('open', {'id': id, 'value': source});
+        _methodChannel.invokeMethod('open', {'id': _id, 'value': source});
       }
       loading.value = true;
     }
@@ -221,12 +214,11 @@ class VideoControllerImplementation extends VideoController {
   @override
   play() {
     if (!disposed) {
-      if (id != null &&
-          playbackState.value == VideoControllerPlaybackState.paused) {
+      if (_id != null && playbackState.value == .paused) {
         _play();
         return true;
       } else if (!autoPlay.value &&
-          playbackState.value == VideoControllerPlaybackState.closed &&
+          playbackState.value == .closed &&
           _source != null) {
         autoPlay.value = true;
         return true;
@@ -238,16 +230,15 @@ class VideoControllerImplementation extends VideoController {
   @override
   pause() {
     if (!disposed) {
-      if (id != null &&
-          playbackState.value == VideoControllerPlaybackState.playing) {
-        _methodChannel.invokeMethod('pause', id);
-        playbackState.value = VideoControllerPlaybackState.paused;
+      if (_id != null && playbackState.value == .playing) {
+        _methodChannel.invokeMethod('pause', _id);
+        playbackState.value = .paused;
         if (!_seeking) {
           loading.value = false;
         }
         return true;
       } else if (autoPlay.value &&
-          playbackState.value == VideoControllerPlaybackState.closed &&
+          playbackState.value == .closed &&
           _source != null) {
         autoPlay.value = false;
         return true;
@@ -259,13 +250,13 @@ class VideoControllerImplementation extends VideoController {
   @override
   seekTo(position, {fast = false}) {
     if (!disposed) {
-      if (id == null) {
+      if (_id == null) {
         _position = position;
         return true;
       } else if (mediaInfo.value == null) {
         if (loading.value && position > 30) {
           _methodChannel.invokeMethod('seekTo', {
-            'id': id,
+            'id': _id,
             'position': position,
             'fast': true,
           });
@@ -278,7 +269,7 @@ class VideoControllerImplementation extends VideoController {
           position = mediaInfo.value!.duration;
         }
         _methodChannel.invokeMethod('seekTo', {
-          'id': id,
+          'id': _id,
           'position': position,
           'fast': fast,
         });
@@ -314,7 +305,7 @@ class VideoControllerImplementation extends VideoController {
         value = 2;
       }
       speed.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setSpeed();
       }
       return true;
@@ -326,7 +317,7 @@ class VideoControllerImplementation extends VideoController {
   setLooping(value) {
     if (!disposed && value != looping.value) {
       looping.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setLooping();
       }
       return true;
@@ -351,7 +342,7 @@ class VideoControllerImplementation extends VideoController {
         (value.width != maxResolution.value.width ||
             value.height != maxResolution.value.height)) {
       maxResolution.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setMaxResolution();
       }
       return true;
@@ -363,7 +354,7 @@ class VideoControllerImplementation extends VideoController {
   setMaxBitRate(value) {
     if (!disposed && value >= 0 && value != maxBitRate.value) {
       maxBitRate.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setMaxBitRate();
       }
       return true;
@@ -375,7 +366,7 @@ class VideoControllerImplementation extends VideoController {
   setPreferredAudioLanguage(value) {
     if (!disposed && value != preferredAudioLanguage.value) {
       preferredAudioLanguage.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setPreferredAudioLanguage();
       }
       return true;
@@ -387,7 +378,7 @@ class VideoControllerImplementation extends VideoController {
   setPreferredSubtitleLanguage(value) {
     if (!disposed && value != preferredSubtitleLanguage.value) {
       preferredSubtitleLanguage.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setPreferredSubtitleLanguage();
       }
       return true;
@@ -399,7 +390,7 @@ class VideoControllerImplementation extends VideoController {
   setShowSubtitle(value) {
     if (!disposed && value != showSubtitle.value) {
       showSubtitle.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setShowSubtitle();
       }
       return true;
@@ -411,7 +402,7 @@ class VideoControllerImplementation extends VideoController {
   setKeepScreenOn(value) {
     if (!disposed && value != keepScreenOn.value) {
       keepScreenOn.value = value;
-      if (id != null) {
+      if (_id != null) {
         _setKeepScreenOn();
       }
       return true;
@@ -451,7 +442,7 @@ class VideoControllerImplementation extends VideoController {
         }
         final ids = tid.split('.');
         _methodChannel.invokeMethod('overrideTrack', {
-          'id': id,
+          'id': _id,
           'groupId': int.parse(ids[0]),
           'trackId': int.parse(ids[1]),
           'enabled': enabled,
@@ -464,63 +455,65 @@ class VideoControllerImplementation extends VideoController {
   }
 
   void _setMaxResolution() => _methodChannel.invokeMethod('setMaxResolution', {
-    'id': id,
+    'id': _id,
     'width': maxResolution.value.width,
     'height': maxResolution.value.height,
   });
 
   void _setMaxBitRate() => _methodChannel.invokeMethod('setMaxBitRate', {
-    'id': id,
+    'id': _id,
     'value': maxBitRate.value,
   });
 
   void _setVolume() => _methodChannel.invokeMethod('setVolume', {
-    'id': id,
+    'id': _id,
     'value': volume.value,
   });
 
-  void _setSpeed() =>
-      _methodChannel.invokeMethod('setSpeed', {'id': id, 'value': speed.value});
+  void _setSpeed() => _methodChannel.invokeMethod('setSpeed', {
+    'id': _id,
+    'value': speed.value,
+  });
 
   void _setLooping() => _methodChannel.invokeMethod('setLooping', {
-    'id': id,
+    'id': _id,
     'value': looping.value,
   });
 
   void _setPreferredAudioLanguage() => _methodChannel.invokeMethod(
     'setPreferredAudioLanguage',
-    {'id': id, 'value': preferredAudioLanguage.value ?? ''},
+    {'id': _id, 'value': preferredAudioLanguage.value ?? ''},
   );
 
   void _setPreferredSubtitleLanguage() => _methodChannel.invokeMethod(
     'setPreferredSubtitleLanguage',
-    {'id': id, 'value': preferredSubtitleLanguage.value ?? ''},
+    {'id': _id, 'value': preferredSubtitleLanguage.value ?? ''},
   );
 
   void _setShowSubtitle() => _methodChannel.invokeMethod('setShowSubtitle', {
-    'id': id,
+    'id': _id,
     'value': showSubtitle.value,
   });
 
   void _setKeepScreenOn() => _methodChannel.invokeMethod('setKeepScreenOn', {
-    'id': id,
+    'id': _id,
     'value': keepScreenOn.value,
   });
 
   void _play() {
-    playbackState.value = VideoControllerPlaybackState.playing;
-    _methodChannel.invokeMethod('play', id);
+    playbackState.value = .playing;
+    _methodChannel.invokeMethod('play', _id);
   }
 
   void _close() {
     _orientation = 0;
     _seeking = false;
     mediaInfo.value = null;
-    videoSize.value = Size.zero;
+    videoSize.value = .zero;
     position.value = 0;
-    bufferRange.value = VideoControllerBufferRange.empty;
+    bufferRange.value = .empty;
     finishedTimes.value = 0;
-    playbackState.value = VideoControllerPlaybackState.closed;
+    playbackState.value = .closed;
     overrideAudio.value = overrideSubtitle.value = null;
   }
 }
