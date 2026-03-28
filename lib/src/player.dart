@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:async_value_notifier/async_value_notifier.dart';
 import 'player.native.dart' if (dart.library.js_interop) 'player.web.dart';
 

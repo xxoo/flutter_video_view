@@ -250,6 +250,7 @@ class VideoControllerImplementation extends VideoController {
     if (!disposed && value >= 0 && value != maxBitRate.value) {
       maxBitRate.value = value;
       _plugin.setMaxBitRate(value);
+      return true;
     }
     return false;
   }
@@ -263,6 +264,7 @@ class VideoControllerImplementation extends VideoController {
             value.height != maxResolution.value.height)) {
       maxResolution.value = value;
       _plugin.setMaxResolution(value.width.toInt(), value.height.toInt());
+      return true;
     }
     return false;
   }

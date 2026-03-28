@@ -1,3 +1,6 @@
+# 1.3.1
+- fix `setMaxResolution()` and `setMaxBitrate()` return values on Web platforms.
+
 # 1.3.0
 - fix video not showing on Linux when flutter >= 3.38
 - **breaking change:** require flutter 3.38 or higher.

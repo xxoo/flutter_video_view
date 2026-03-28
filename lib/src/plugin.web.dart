@@ -11,7 +11,7 @@ extension type VideoViewPlugin._(JSObject _) implements JSObject {
     _, {
     Object? params,
   }) {
-    const requiredVersion = '1.3.0';
+    const requiredVersion = '1.3.1';
     if (version != requiredVersion) {
       Zone.current.handleUncaughtError(
         'VideoViewPlugin.js version: $version. Required: $requiredVersion.\nPlease try cleaning the browser cache or using "dart run video_view:webinit" to update.',

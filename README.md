@@ -7,7 +7,7 @@
 	<img src="https://img.shields.io/pub/dm/video_view" alt="pub downloads">
 </p>
 
-`video_view` is a lightweight media player with subtitle rendering[^subtitle] and audio track switching support, leveraging system or app-level components for seamless playback. For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
+`video_view` is a lightweight media player with subtitle rendering<sup><a id="subtitle-source-0" href="#subtitle-0">[1]</a></sup> and audio track switching support, leveraging system or app-level components for seamless playback. For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
 
 #### Key benefits:
 - Complete platform coverage: Android, iOS, macOS, Windows, Web, Linux.
@@ -126,14 +126,14 @@ ___
 | Android      | 7+          | [ExoPlayer](https://developer.android.com/media/media3/exoplayer)            |
 | iOS          | 15+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/) |
 | macOS        | 12+         | [AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer/) |
-| Windows | 10+ | [MediaPlayer](https://learn.microsoft.com/uwp/api/windows.media.playback.mediaplayer)[^mediaplayer] |
-| Linux        | N/A         | [mpv](https://github.com/mpv-player/mpv/tree/master/include/mpv)[^mpv]       |
-| Web | Chrome 84+ / Safari 15+ / Firefox 90+ | [\<video>](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/video), [ShakaPlayer](https://shaka-player-demo.appspot.com/docs/api/shaka.Player.html)[^shaka] |
+| Windows | 10+ | [MediaPlayer](https://learn.microsoft.com/uwp/api/windows.media.playback.mediaplayer)<sup><a id="mediaplayer-source-0" href="#mediaplayer-0">[2]</a></sup> |
+| Linux        | N/A         | [mpv](https://github.com/mpv-player/mpv/tree/master/include/mpv)<sup><a id="mpv-source-0" href="#mpv-0">[3]</a></sup> |
+| Web | Chrome 84+ / Safari 15+ / Firefox 90+ | [\<video>](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/video), [ShakaPlayer](https://shaka-player-demo.appspot.com/docs/api/shaka.Player.html)<sup><a id="shaka-source-0" href="#shaka-0">[4]</a></sup> |
 ___
 
 ### Supported media formats
 
-***For user who only cares about Android and iOS, the following formats are supported without condition:***
+*For user who only cares about Android and iOS, the following formats are supported without condition:*
 | **Type**         | **Formats**          |
 | ---------------- | -------------------- |
 | Video Codec      | h.264, h.265         |
@@ -143,14 +143,14 @@ ___
 | Stream Protocol  | HLS, LL-HLS          |
 | URL Scheme       | http(s), file, asset |
 
-***A more complete list with conditions:***
+*A more complete list with conditions:*
 | **Type**         | **Formats**                                          |
 | ---------------- | ---------------------------------------------------- |
-| Video Codec      | h.264, h.265[^h265], av1[^apple]                     |
+| Video Codec      | h.264, h.265<sup><a id="h265-source-0" href="#h265-0">[5]</a></sup>, av1<sup><a id="apple-source-0" href="#apple-0">[6]</a></sup> |
 | Audio Codec      | aac, mp3                                             |
-| Container Format | mp4, ts, webm[^apple]                                |
-| Subtitle Format  | WebVTT[^vtt], CEA-608/708                            |
-| Stream Protocol  | HLS, LL-HLS, DASH[^avplayer], MSS[^avplayer][^shaka] |
+| Container Format | mp4, ts, webm<sup><a id="apple-source-1" href="#apple-1">[6]</a></sup> |
+| Subtitle Format  | WebVTT<sup><a id="vtt-source-0" href="#vtt-0">[7]</a></sup>, CEA-608/708                            |
+| Stream Protocol  | HLS, LL-HLS, DASH<sup><a id="avplayer-source-0" href="#avplayer-0">[8]</a></sup>, MSS<sup><a id="avplayer-source-1" href="#avplayer-1">[8]</a><a id="shaka-source-1" href="#shaka-1">[4]</a></sup> |
 | URL Scheme       | http(s), file, asset                                 |
 ___
 
@@ -170,12 +170,15 @@ final example1 = 'https://example.com/video?.m3u8';
 // Override HLS to DASH
 final example2 = 'https://example.com/video.m3u8#.mpd';
 ```
+___
 
-[^subtitle]: Only internal subtitle tracks are supported.
-[^mediaplayer]: `MediaPlayer` may lead to crash on certain Windows builds when rendering subtitles.
-[^mpv]: `video_view` requires `mpv`(v0.4+) or `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `mpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
-[^shaka]: `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) to enable HLS and DASH support on web platforms. For MSS support, please use [ShakaPlayer v4.x](https://cdn.jsdelivr.net/npm/shaka-player@4/dist/shaka-player.compiled.js) instead.
-[^h265]: Windows user may need to install a free [h.265 decoder](https://apps.microsoft.com/detail/9n4wgh0z6vhq) from Microsoft Store. Web platforms may lack h.265 support except for Apple webkit.
-[^apple]: Apple platforms may lack WebM and AV1 support.
-[^vtt]: WebVTT subtitles within HLS are not supported by Linux backend.
-[^avplayer]: DASH and MSS are not supported by iOS/macOS backend.
+### Footnotes
+
+1. <a id="subtitle-0" href="#subtitle-source-0">^</a> Only internal subtitle tracks are supported.
+2. <a id="mediaplayer-0" href="#mediaplayer-source-0">^</a> `MediaPlayer` may lead to crash on certain Windows builds when rendering subtitles.
+3. <a id="mpv-0" href="#mpv-source-0">^</a> `video_view` requires `mpv`(v0.4+) or `libmpv`(aka `mpv-libs`) on Linux. Developers integrating this plugin into Linux app should install `libmpv-dev`(aka `mpv-libs-devel`) instead. If unavailable in your package manager, please build `mpv` from source. For details refer to [mpv-build](https://github.com/mpv-player/mpv-build).
+4. <a id="shaka-0" href="#shaka-source-0">^</a> <a id="shaka-1" href="#shaka-source-1">^</a> `video_view` requires [ShakaPlayer](https://cdn.jsdelivr.net/npm/shaka-player/dist/shaka-player.compiled.js) to enable HLS and DASH support on web platforms. For MSS support, please use [ShakaPlayer v4.x](https://cdn.jsdelivr.net/npm/shaka-player@4/dist/shaka-player.compiled.js) instead.
+5. <a id="h265-0" href="#h265-source-0">^</a> Windows user may need to install a free [h.265 decoder](https://apps.microsoft.com/detail/9n4wgh0z6vhq) from Microsoft Store. Web platforms may lack h.265 support except for Apple webkit.
+6. <a id="apple-0" href="#apple-source-0">^</a> <a id="apple-1" href="#apple-source-1">^</a> Apple platforms may lack webm and av1 support.
+7. <a id="vtt-0" href="#vtt-source-0">^</a> WebVTT subtitles within HLS are not supported by Linux backend.
+8. <a id="avplayer-0" href="#avplayer-source-0">^</a> <a id="avplayer-1" href="#avplayer-source-1">^</a> DASH and MSS are not supported by iOS/macOS backend.

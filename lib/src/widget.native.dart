@@ -31,21 +31,22 @@ FittedBox showVideo(VideoController player, VideoView widget) {
       child: video,
     );
   }
+  if (player.subId != null && player.showSubtitle.value) {
+    video = Stack(
+      fit: .passthrough,
+      children: [
+        video,
+        Texture(textureId: player.subId!),
+      ],
+    );
+  }
   return FittedBox(
     fit: widget.videoFit,
     clipBehavior: .hardEdge,
     child: SizedBox(
       width: player.videoSize.value.width,
       height: player.videoSize.value.height,
-      child: player.subId == null || !player.showSubtitle.value
-          ? video
-          : Stack(
-              fit: .passthrough,
-              children: [
-                video,
-                Texture(textureId: player.subId!),
-              ],
-            ),
+      child: video,
     ),
   );
 }
