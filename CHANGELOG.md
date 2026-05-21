@@ -1,3 +1,6 @@
+# 1.3.2
+- support flutter 3.44
+
 # 1.3.1
 - fix `setMaxResolution()` and `setMaxBitrate()` return values on Web platforms.
 

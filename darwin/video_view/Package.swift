@@ -12,11 +12,15 @@ let package = Package(
 	products: [
 		.library(name: "video-view", targets: ["video_view"])
 	],
-	dependencies: [],
+	dependencies: [
+		.package(name: "FlutterFramework", path: "../FlutterFramework")
+	],
 	targets: [
 		.target(
 			name: "video_view",
-			dependencies: [],
+			dependencies: [
+				.product(name: "FlutterFramework", package: "FlutterFramework")
+			],
 			resources: [
 				// TODO: If your plugin requires a privacy manifest
 				// (e.g. if it uses any required reason APIs), update the PrivacyInfo.xcprivacy file

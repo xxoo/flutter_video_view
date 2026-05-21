@@ -1,10 +1,10 @@
-<p align="center"><a href="https://github.com/xxoo/flutter_video_view"><img src="logo.svg" alt="video_view" width="128" /></a></p>
+<p align="center"><a href="https://github.com/xxoo/flutter_video_view"><img src="logo.svg" alt="video_view" width="128"/></a></p>
 
 <p align="center">
-	<img src="https://img.shields.io/pub/v/video_view" alt="pub version">
-	<img src="https://img.shields.io/pub/likes/video_view" alt="pub likes">
-	<img src="https://img.shields.io/github/stars/xxoo/flutter_video_view" alt="github stars">
-	<img src="https://img.shields.io/pub/dm/video_view" alt="pub downloads">
+	<img src="https://img.shields.io/pub/v/video_view" alt="pub version"/>
+	<img src="https://img.shields.io/pub/likes/video_view" alt="pub likes"/>
+	<img src="https://img.shields.io/github/stars/xxoo/flutter_video_view" alt="github stars"/>
+	<img src="https://img.shields.io/pub/dm/video_view" alt="pub downloads"/>
 </p>
 
 `video_view` is a lightweight media player with subtitle rendering<sup><a id="subtitle-source-0" href="#subtitle-0">[1]</a></sup> and audio track switching support, leveraging system or app-level components for seamless playback. For API documentation, please visit [here](https://pub.dev/documentation/video_view/latest/video_view/).
@@ -105,11 +105,9 @@ class _MyAppState extends State<MyApp> {
       IconButton(
         iconSize: 64,
         icon: const Icon(Icons.play_arrow),
-        isSelected:
-            _player.playbackState.value == VideoControllerPlaybackState.playing,
+        isSelected: _player.playbackState.value == .playing,
         selectedIcon: const Icon(Icons.pause),
-        onPressed: () =>
-            _player.playbackState.value == VideoControllerPlaybackState.playing
+        onPressed: () => _player.playbackState.value == .playing
             ? _player.pause()
             : _player.play(),
       ),
