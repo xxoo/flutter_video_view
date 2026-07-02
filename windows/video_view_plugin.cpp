@@ -163,7 +163,17 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	template <typename L> static void queueWork(L lambda) {
-		dispatcherQueue.TryEnqueue(DispatcherQueueHandler(lambda));
+		// The dispatched lambdas call WinRT APIs (playbackSession.Position(),
+		// eventSink->Success(), MediaPlayer methods, ...) that can throw
+		// winrt::hresult_error. An unhandled throw out of a DispatcherQueue
+		// callback aborts the whole process (ucrtbase FAST_FAIL, seen in client
+		// crash dumps). Swallow it here so a transient failure drops the event
+		// instead of crashing the app.
+		dispatcherQueue.TryEnqueue(DispatcherQueueHandler([lambda = std::move(lambda)]() {
+			try {
+				lambda();
+			} catch (...) {}
+		}));
 	}
 
 	static TextureVariant* createTextureVariant(weak_ptr<VideoController> weakThis, const bool isSubtitle) {
