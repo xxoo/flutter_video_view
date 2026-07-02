@@ -14,6 +14,7 @@
 #include <winrt/Windows.System.UserProfile.h>
 #include <DispatcherQueue.h>
 #include <mutex>
+#include <stdexcept>
 
 #undef max //we want to use std::max
 
@@ -1064,6 +1065,19 @@ public:
 		methodChannel->SetMethodCallHandler([&](const MethodCall<EncodableValue>& call, unique_ptr<MethodResult<EncodableValue>> result) {
 			auto returned = false;
 			auto& methodName = call.method_name();
+			// The bodies below use std::get<>, EncodableMap::at() and map lookups
+			// that throw (bad_variant_access / out_of_range) or null-deref if Dart
+			// sends an unexpected shape or a stale player id. An unhandled throw here
+			// aborts the whole process (ucrtbase FAST_FAIL_INVALID_ARG, seen in a
+			// crash dump). Catch it and return an error to Dart instead of crashing.
+			// getPlayer throws for a missing/dead id instead of map[]-inserting a
+			// null shared_ptr and dereferencing it.
+			auto getPlayer = [&](int64_t id) -> shared_ptr<VideoController> {
+				auto it = players.find(id);
+				if (it == players.end() || !it->second) throw std::runtime_error("no such player");
+				return it->second;
+			};
+			try {
 			if (methodName == "create") {
 				if (VideoController::supported) {
 					auto player = make_shared<VideoController>();
@@ -1082,73 +1096,73 @@ public:
 					players.erase(call.arguments()->LongValue());
 				}
 			} else if (methodName == "close") {
-				auto& player = players[call.arguments()->LongValue()];
-				player->close();
+				auto it = players.find(call.arguments()->LongValue());
+				if (it != players.end() && it->second) it->second->close();
 			} else if (methodName == "play") {
-				auto& player = players[call.arguments()->LongValue()];
-				player->play();
+				auto it = players.find(call.arguments()->LongValue());
+				if (it != players.end() && it->second) it->second->play();
 			} else if (methodName == "pause") {
-				auto& player = players[call.arguments()->LongValue()];
-				player->pause();
+				auto it = players.find(call.arguments()->LongValue());
+				if (it != players.end() && it->second) it->second->pause();
 			} else if (methodName == "open") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto it = players.find(args.at(Id).LongValue());
 				auto& src = get<string>(args.at(Value));
-				player->open(src);
+				if (it != players.end() && it->second) it->second->open(src);
 			} else if (methodName == "seekTo") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto pos = args.at(string("position")).LongValue();
 				player->seekTo(pos);
 			} else if (methodName == "setVolume") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto vol = get<double>(args.at(Value));
 				player->setVolume((float)vol);
 			} else if (methodName == "setSpeed") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto spd = get<double>(args.at(Value));
 				player->setSpeed((float)spd);
 			} else if (methodName == "setLooping") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto loop = get<bool>(args.at(Value));
 				player->setLooping(loop);
 			} else if (methodName == "setMaxResolution") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto width = get<double>(args.at(string("width")));
 				auto height = get<double>(args.at(string("height")));
 				player->setMaxResolution((uint16_t)width, (uint16_t)height);
 			} else if (methodName == "setMaxBitRate") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto bitrate = args.at(Value).LongValue();
 				player->setMaxBitRate((uint32_t)bitrate);
 			} else if (methodName == "setPreferredSubtitleLanguage") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto& lang = get<string>(args.at(Value));
 				player->setPreferredSubtitleLanguage(lang);
 			} else if (methodName == "setPreferredAudioLanguage") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto& lang = get<string>(args.at(Value));
 				player->setPreferredAudioLanguage(lang);
 			} else if (methodName == "setShowSubtitle") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto show = get<bool>(args.at(Value));
 				player->setShowSubtitle(show);
 			} else if (methodName == "setKeepScreenOn") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto enable = get<bool>(args.at(Value));
 				player->setKeepScreenOn(enable);
 			} else if (methodName == "overrideTrack") {
 				auto& args = get<EncodableMap>(*call.arguments());
-				auto& player = players[args.at(Id).LongValue()];
+				auto player = getPlayer(args.at(Id).LongValue());
 				auto kind = get<int32_t>(args.at(string("groupId")));
 				auto trackId = get<int32_t>(args.at(string("trackId")));
 				auto enabled = get<bool>(args.at(string("enabled")));
@@ -1156,6 +1170,11 @@ public:
 			} else {
 				result->NotImplemented();
 				returned = true;
+			}
+			} catch (const std::exception& e) {
+				if (!returned) { result->Error("video_view", e.what()); returned = true; }
+			} catch (...) {
+				if (!returned) { result->Error("video_view", "native error"); returned = true; }
 			}
 			if (!returned) {
 				result->Success();
