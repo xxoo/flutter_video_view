@@ -28,6 +28,20 @@ using namespace winrt::Windows::Media::Playback;
 using namespace winrt::Windows::Media::Streaming::Adaptive;
 using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
 
+// Decode a UTF-8 std::string into a UTF-16 std::wstring. The Dart side sends
+// file paths as UTF-8; a naive `wstring(s.begin(), s.end())` widens each byte
+// individually and corrupts any non-ASCII path, which then produces an invalid
+// file:// URI and MediaPlayerError::SourceNotSupported. MultiByteToWideChar
+// with CP_UTF8 decodes the code points correctly.
+static wstring utf8ToWide(const string& utf8) {
+	if (utf8.empty()) return wstring();
+	const int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), nullptr, 0);
+	if (len <= 0) return wstring(utf8.begin(), utf8.end()); // fallback: never worse than before
+	wstring wide(len, L'\0');
+	MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), &wide[0], len);
+	return wide;
+}
+
 // Function pointer typedef for CreateDispatcherQueueController
 typedef HRESULT(WINAPI* CreateDispatcherQueueControllerFunc)(
 	DispatcherQueueOptions options,
@@ -781,14 +795,16 @@ public:
 			wstring sourceUrl(L"file://");
 			sourceUrl += path;
 			sourceUrl.replace(sourceUrl.find_last_of(L'\\') + 1, sourceUrl.length(), L"data/flutter_assets/");
-			sourceUrl += wstring(src.begin() + 8, src.end());
+			sourceUrl += utf8ToWide(src.substr(8));
 			replace(sourceUrl.begin(), sourceUrl.end(), L'\\', L'/');
 			uri = Uri(sourceUrl);
 		} else if (src.find("://") == string::npos) {
-			wstring sourceUrl(L"file://");
-			sourceUrl += wstring(src.begin(), src.end());
-			replace(sourceUrl.begin(), sourceUrl.end(), L'\\', L'/');
-			uri = Uri(sourceUrl);
+			// Local file path. Build the URI from a properly decoded UTF-16 path
+			// and let winrt::Uri percent-encode spaces/reserved chars. A naive
+			// byte-widen here corrupts non-ASCII paths -> SourceNotSupported.
+			wstring widePath = utf8ToWide(src);
+			replace(widePath.begin(), widePath.end(), L'\\', L'/');
+			uri = Uri(L"file:///" + widePath);
 		} else {
 			uri = Uri(to_hstring(src));
 			networking = !src._Starts_with("file://");
