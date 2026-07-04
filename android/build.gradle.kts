@@ -1,8 +1,8 @@
 group = "dev.xx.video_view"
-version = "1.3.2"
+version = "1.3.3"
 
 plugins {
-	// Flutter 3.44 may fuckup with this block unless we have this here: {}
+	// Flutter 3.44 may fuck with this block unless we have: {}
 	id("com.android.library")
 }
 

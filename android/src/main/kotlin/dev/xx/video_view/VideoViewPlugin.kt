@@ -261,8 +261,7 @@ class VideoController(
 		state = 2U
 		val audioTracks = mutableMapOf<String, MutableMap<String, Any?>>()
 		val subtitleTracks = mutableMapOf<String, MutableMap<String, Any?>>()
-		for (i in 0 until exoPlayer.currentTracks.groups.size) {
-			val group = exoPlayer.currentTracks.groups[i]
+		for ((i, group) in exoPlayer.currentTracks.groups.withIndex()) {
 			if (group.type == C.TRACK_TYPE_AUDIO || group.type == C.TRACK_TYPE_TEXT) {
 				for (j in 0 until group.length) {
 					if (group.isTrackSupported(j, false)) {

@@ -57,82 +57,84 @@ class VideoControllerImplementation extends VideoController {
         _eventSubscription = EventChannel('VideoViewPlugin/$_id')
             .receiveBroadcastStream()
             .listen((event) {
-              final e = event as Map;
-              final eventName = e['event'] as String;
-              if (eventName == 'mediaInfo') {
-                if (_source == e['source']) {
-                  loading.value = false;
-                  mediaInfo.value = VideoControllerMediaInfo(
-                    e['duration'],
-                    VideoControllerAudioInfo.batchFromMap(e['audioTracks']),
-                    VideoControllerSubtitleInfo.batchFromMap(
-                      e['subtitleTracks'],
-                    ),
-                    _source!,
-                  );
-                  if (mediaInfo.value!.duration == 0) {
-                    speed.value = 1;
+              if (!disposed) {
+                final e = event as Map;
+                final eventName = e['event'] as String;
+                if (eventName == 'mediaInfo') {
+                  if (_source == e['source']) {
+                    loading.value = false;
+                    mediaInfo.value = VideoControllerMediaInfo(
+                      e['duration'],
+                      VideoControllerAudioInfo.batchFromMap(e['audioTracks']),
+                      VideoControllerSubtitleInfo.batchFromMap(
+                        e['subtitleTracks'],
+                      ),
+                      _source!,
+                    );
+                    if (mediaInfo.value!.duration == 0) {
+                      speed.value = 1;
+                    }
+                    if (autoPlay.value) {
+                      _play();
+                    } else {
+                      playbackState.value = .paused;
+                    }
                   }
-                  if (autoPlay.value) {
-                    _play();
-                  } else {
-                    playbackState.value = .paused;
+                } else if (eventName == 'videoSize') {
+                  if (playbackState.value != .closed || loading.value) {
+                    final width = e['width'] as double;
+                    final height = e['height'] as double;
+                    final orientation = e['orientation'] as int? ?? 0;
+                    if (_orientation != orientation ||
+                        width != videoSize.value.width ||
+                        height != videoSize.value.height) {
+                      _orientation = orientation;
+                      videoSize.value = width > 0 && height > 0
+                          ? Size(width, height)
+                          : .zero;
+                    }
                   }
-                }
-              } else if (eventName == 'videoSize') {
-                if (playbackState.value != .closed || loading.value) {
-                  final width = e['width'] as double;
-                  final height = e['height'] as double;
-                  final orientation = e['orientation'] as int? ?? 0;
-                  if (_orientation != orientation ||
-                      width != videoSize.value.width ||
-                      height != videoSize.value.height) {
-                    _orientation = orientation;
-                    videoSize.value = width > 0 && height > 0
-                        ? Size(width, height)
-                        : .zero;
+                } else if (eventName == 'position') {
+                  if (mediaInfo.value != null) {
+                    position.value = e['value'] > mediaInfo.value!.duration
+                        ? mediaInfo.value!.duration
+                        : e['value'] < 0
+                        ? 0
+                        : e['value'];
                   }
-                }
-              } else if (eventName == 'position') {
-                if (mediaInfo.value != null) {
-                  position.value = e['value'] > mediaInfo.value!.duration
-                      ? mediaInfo.value!.duration
-                      : e['value'] < 0
-                      ? 0
-                      : e['value'];
-                }
-              } else if (eventName == 'buffer') {
-                if (mediaInfo.value != null) {
-                  bufferRange.value = VideoControllerBufferRange(
-                    e['start'] as int,
-                    e['end'] as int,
-                  );
-                }
-              } else if (eventName == 'error') {
-                // ignore errors when player is closed
-                if (playbackState.value != .closed || loading.value) {
-                  _source = null;
-                  loading.value = false;
-                  error.value = e['value'];
-                  _close();
-                }
-              } else if (eventName == 'loading') {
-                if (mediaInfo.value != null) {
-                  loading.value = e['value'];
-                }
-              } else if (eventName == 'seekEnd') {
-                if (mediaInfo.value != null) {
-                  _seeking = false;
-                  loading.value = false;
-                }
-              } else if (eventName == 'finished') {
-                if (mediaInfo.value != null) {
-                  finishedTimes.value += 1;
-                  loading.value = false;
-                  if (mediaInfo.value!.duration == 0) {
+                } else if (eventName == 'buffer') {
+                  if (mediaInfo.value != null) {
+                    bufferRange.value = VideoControllerBufferRange(
+                      e['start'] as int,
+                      e['end'] as int,
+                    );
+                  }
+                } else if (eventName == 'error') {
+                  // ignore errors when player is closed
+                  if (playbackState.value != .closed || loading.value) {
+                    _source = null;
+                    loading.value = false;
+                    error.value = e['value'];
                     _close();
-                  } else if (!looping.value) {
-                    playbackState.value = .paused;
+                  }
+                } else if (eventName == 'loading') {
+                  if (mediaInfo.value != null) {
+                    loading.value = e['value'];
+                  }
+                } else if (eventName == 'seekEnd') {
+                  if (mediaInfo.value != null) {
+                    _seeking = false;
+                    loading.value = false;
+                  }
+                } else if (eventName == 'finished') {
+                  if (mediaInfo.value != null) {
+                    finishedTimes.value += 1;
+                    loading.value = false;
+                    if (mediaInfo.value!.duration == 0) {
+                      _close();
+                    } else if (!looping.value) {
+                      playbackState.value = .paused;
+                    }
                   }
                 }
               }

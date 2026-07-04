@@ -19,7 +19,7 @@ class _MyAppState extends State<MyApp> {
 
   @override
   build(_) => Stack(
-    alignment: Alignment.center,
+    alignment: .center,
     children: [
       VideoView(
         source:

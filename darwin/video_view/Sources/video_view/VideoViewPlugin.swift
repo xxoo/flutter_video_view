@@ -205,7 +205,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 			if avPlayer.currentTime() != time {
 				seeking = true
 				seek(to: time, fast: fast) { [weak self] finished in
-					if finished && self != nil {
+					if finished && self != nil && self!.seeking {
 						self!.seeking = false
 						self!.eventSink?(["event": "seekEnd"])
 						if self!.watcher == nil {
@@ -369,8 +369,7 @@ class VideoController: NSObject, FlutterStreamHandler {
 		let milliseconds = seconds * 1000
 		if milliseconds > Double(Int.max) {
 			return Int.max
-		}
-		if milliseconds < Double(Int.min) {
+		} else if milliseconds < Double(Int.min) {
 			return Int.min
 		}
 		return Int(milliseconds)

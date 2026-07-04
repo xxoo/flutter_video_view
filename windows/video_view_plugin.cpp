@@ -28,20 +28,6 @@ using namespace winrt::Windows::Media::Playback;
 using namespace winrt::Windows::Media::Streaming::Adaptive;
 using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
 
-// Decode a UTF-8 std::string into a UTF-16 std::wstring. The Dart side sends
-// file paths as UTF-8; a naive `wstring(s.begin(), s.end())` widens each byte
-// individually and corrupts any non-ASCII path, which then produces an invalid
-// file:// URI and MediaPlayerError::SourceNotSupported. MultiByteToWideChar
-// with CP_UTF8 decodes the code points correctly.
-static wstring utf8ToWide(const string& utf8) {
-	if (utf8.empty()) return wstring();
-	const int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), nullptr, 0);
-	if (len <= 0) return wstring(utf8.begin(), utf8.end()); // fallback: never worse than before
-	wstring wide(len, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), &wide[0], len);
-	return wide;
-}
-
 // Function pointer typedef for CreateDispatcherQueueController
 typedef HRESULT(WINAPI* CreateDispatcherQueueControllerFunc)(
 	DispatcherQueueOptions options,
@@ -55,6 +41,20 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	static ID3D11Device* d3dDevice;
 	static ID3D11DeviceContext* d3dContext;
 	static set<int64_t> keepScreenOnRefs;
+
+	// Decode a UTF-8 std::string into a UTF-16 std::wstring. The Dart side sends
+	// file paths as UTF-8; a naive `wstring(s.begin(), s.end())` widens each byte
+	// individually and corrupts any non-ASCII path, which then produces an invalid
+	// file:// URI and MediaPlayerError::SourceNotSupported. MultiByteToWideChar
+	// with CP_UTF8 decodes the code points correctly.
+	static wstring utf8ToWide(const string& utf8) {
+		if (utf8.empty()) return wstring();
+		const int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), nullptr, 0);
+		if (len <= 0) return wstring(utf8.begin(), utf8.end()); // fallback: never worse than before
+		wstring wide(len, L'\0');
+		MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), &wide[0], len);
+		return wide;
+	}
 
 	static void requestKeepScreenOn(const int64_t id, const bool enable) {
 		if (enable) {
@@ -417,7 +417,7 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	void sendError(const char* message) {
-		if (state > 0) {
+		if (state > 0 && mediaPlayer.PlaybackSession().PlaybackState() == MediaPlaybackState::None) {
 			close();
 			if (eventSink) {
 				eventSink->Success(EncodableMap{
@@ -429,72 +429,70 @@ class VideoController : public enable_shared_from_this<VideoController> {
 	}
 
 	void loadEnd() {
-		if (state == 1) {
-			state = 2;
-			EncodableMap audioTracks{};
-			EncodableMap subtitleTracks{};
-			auto item = mediaPlayer.Source().as<MediaPlaybackItem>();
-			char id[16];
-			auto audiotracks = item.AudioTracks();
-			auto selectedAudioTrackId = getDefaultTrack(MediaTrackKind::Audio);
-			if (selectedAudioTrackId >= 0 && audiotracks.SelectedIndex() != selectedAudioTrackId) {
-				audiotracks.SelectedIndex(selectedAudioTrackId);
+		state = 2;
+		EncodableMap audioTracks{};
+		EncodableMap subtitleTracks{};
+		auto item = mediaPlayer.Source().as<MediaPlaybackItem>();
+		char id[16];
+		auto audiotracks = item.AudioTracks();
+		auto selectedAudioTrackId = getDefaultTrack(MediaTrackKind::Audio);
+		if (selectedAudioTrackId >= 0 && audiotracks.SelectedIndex() != selectedAudioTrackId) {
+			audiotracks.SelectedIndex(selectedAudioTrackId);
+		}
+		for (uint16_t i = 0; i < audiotracks.Size(); i++) {
+			auto track = audiotracks.GetAt(i);
+			auto props = track.GetEncodingProperties();
+			auto title = track.Name();
+			if (title.empty()) {
+				title = track.Label();
 			}
-			for (uint16_t i = 0; i < audiotracks.Size(); i++) {
-				auto track = audiotracks.GetAt(i);
-				auto props = track.GetEncodingProperties();
+			sprintf_s(id, "%d.%d", MediaTrackKind::Audio, i);
+			audioTracks[string(id)] = EncodableMap{
+				{ string("title"), to_string(title) },
+				{ string("language"), to_string(track.Language()) },
+				{ string("format"), to_string(props.Subtype()) },
+				{ string("bitRate"), EncodableValue((int32_t)props.Bitrate()) },
+				{ string("channels"), EncodableValue((int32_t)props.ChannelCount()) },
+				{ string("sampleRate"), EncodableValue((int32_t)props.SampleRate()) }
+			};
+		}
+		auto subtitletracks = item.TimedMetadataTracks();
+		auto selectedSubtitleTrackId = getDefaultTrack(MediaTrackKind::TimedMetadata);
+		for (uint16_t i = 0; i < subtitletracks.Size(); i++) {
+			auto track = subtitletracks.GetAt(i);
+			auto kind = track.TimedMetadataKind();
+			if (kind == TimedMetadataKind::Caption || kind == TimedMetadataKind::Subtitle || kind == TimedMetadataKind::ImageSubtitle) {
+				if (selectedSubtitleTrackId >= 0) {
+					subtitletracks.SetPresentationMode(i, i == selectedSubtitleTrackId ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
+				}
 				auto title = track.Name();
 				if (title.empty()) {
 					title = track.Label();
 				}
-				sprintf_s(id, "%d.%d", MediaTrackKind::Audio, i);
-				audioTracks[string(id)] = EncodableMap{
+				sprintf_s(id, "%d.%d", MediaTrackKind::TimedMetadata, i);
+				subtitleTracks[string(id)] = EncodableMap{
 					{ string("title"), to_string(title) },
 					{ string("language"), to_string(track.Language()) },
-					{ string("format"), to_string(props.Subtype()) },
-					{ string("bitRate"), EncodableValue((int32_t)props.Bitrate()) },
-					{ string("channels"), EncodableValue((int32_t)props.ChannelCount()) },
-					{ string("sampleRate"), EncodableValue((int32_t)props.SampleRate()) }
+					{ string("format"), string(translateSubType(kind)) }
 				};
 			}
-			auto subtitletracks = item.TimedMetadataTracks();
-			auto selectedSubtitleTrackId = getDefaultTrack(MediaTrackKind::TimedMetadata);
-			for (uint16_t i = 0; i < subtitletracks.Size(); i++) {
-				auto track = subtitletracks.GetAt(i);
-				auto kind = track.TimedMetadataKind();
-				if (kind == TimedMetadataKind::Caption || kind == TimedMetadataKind::Subtitle || kind == TimedMetadataKind::ImageSubtitle) {
-					if (selectedSubtitleTrackId >= 0) {
-						subtitletracks.SetPresentationMode(i, i == selectedSubtitleTrackId ? TimedMetadataTrackPresentationMode::PlatformPresented : TimedMetadataTrackPresentationMode::Disabled);
-					}
-					auto title = track.Name();
-					if (title.empty()) {
-						title = track.Label();
-					}
-					sprintf_s(id, "%d.%d", MediaTrackKind::TimedMetadata, i);
-					subtitleTracks[string(id)] = EncodableMap{
-						{ string("title"), to_string(title) },
-						{ string("language"), to_string(track.Language()) },
-						{ string("format"), string(translateSubType(kind)) }
-					};
-				}
+		}
+		auto pos = streaming ? 0 : mediaPlayer.PlaybackSession().NaturalDuration().count() / 10000;
+		if (eventSink) {
+			eventSink->Success(EncodableMap{
+				{ string("event"), string("mediaInfo") },
+				{ string("audioTracks"), audioTracks },
+				{ string("subtitleTracks"), subtitleTracks },
+				{ string("duration"), EncodableValue(pos) },
+				{ string("source"), source }
+			});
+		}
+		if (!streaming) {
+			if (pos > 0) {
+				sendPosition(pos);
 			}
-			auto pos = streaming ? 0 : mediaPlayer.PlaybackSession().NaturalDuration().count() / 10000;
-			if (eventSink) {
-				eventSink->Success(EncodableMap{
-					{ string("event"), string("mediaInfo") },
-					{ string("audioTracks"), audioTracks },
-					{ string("subtitleTracks"), subtitleTracks },
-					{ string("duration"), EncodableValue(pos) },
-					{ string("source"), source }
-				});
-			}
-			if (!streaming) {
-				if (pos > 0) {
-					sendPosition(pos);
-				}
-				if (networking && bufferPosition > pos) {
-					sendBuffer(pos);
-				}
+			if (networking && bufferPosition > pos) {
+				sendBuffer(pos);
 			}
 		}
 	}
@@ -657,7 +655,7 @@ public:
 				auto sharedThis = weakThis.lock();
 				if (sharedThis) {
 					sharedThis->seeking = false;
-					if (sharedThis->state == 1) {
+					if (sharedThis->state == 1 && sharedThis->mediaPlayer.PlaybackSession().PlaybackState() > MediaPlaybackState::Opening) {
 						sharedThis->loadEnd();
 					} else if (sharedThis->state > 1 && sharedThis->eventSink) {
 						sharedThis->eventSink->Success(EncodableMap{
@@ -695,12 +693,12 @@ public:
 		playbackSession.BufferedRangesChanged([weakThis](MediaPlaybackSession playbackSession, auto) {
 			queueWork([weakThis, playbackSession]() {
 				auto sharedThis = weakThis.lock();
-				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !sharedThis->streaming) {
+				if (sharedThis && sharedThis->state > 0 && sharedThis->networking && !sharedThis->streaming && playbackSession.PlaybackState() > MediaPlaybackState::None) {
 					auto buffered = playbackSession.GetBufferedRanges();
+					auto pos = playbackSession.Position().count() / 10000;
 					for (uint32_t i = 0; i < buffered.Size(); i++) {
 						auto start = buffered.GetAt(i).Start.count() / 10000;
 						auto end = buffered.GetAt(i).End.count() / 10000;
-						auto pos = playbackSession.Position().count() / 10000;
 						if (start <= pos && end >= pos) {
 							if (sharedThis->bufferPosition != end) {
 								sharedThis->bufferPosition = end;
@@ -747,18 +745,20 @@ public:
 			queueWork([weakThis]() {
 				auto sharedThis = weakThis.lock();
 				if (sharedThis && sharedThis->state == 1) {
-					sharedThis->mediaPlayer.Volume(sharedThis->volume);
 					auto playbackSession = sharedThis->mediaPlayer.PlaybackSession();
-					if (sharedThis->streaming) {
-						playbackSession.PlaybackRate(1);
-						sharedThis->position = 0;
-						sharedThis->loadEnd();
-					} else {
-						playbackSession.PlaybackRate(sharedThis->speed);
-						// seek anyway to ensure media is loaded
-						sharedThis->seeking = true;
-						playbackSession.Position(chrono::milliseconds(sharedThis->position));
-						sharedThis->position = 0;
+					if (playbackSession.PlaybackState() > MediaPlaybackState::Opening) {
+						sharedThis->mediaPlayer.Volume(sharedThis->volume);
+						if (sharedThis->streaming) {
+							playbackSession.PlaybackRate(1);
+							sharedThis->position = 0;
+							sharedThis->loadEnd();
+						} else {
+							playbackSession.PlaybackRate(sharedThis->speed);
+							// seek anyway to ensure media is loaded
+							sharedThis->seeking = true;
+							playbackSession.Position(chrono::milliseconds(sharedThis->position));
+							sharedThis->position = 0;
+						}
 					}
 				}
 			});

@@ -21,23 +21,23 @@ class _AppViewState extends State<AppView> {
   build(_) => Scaffold(
     appBar: AppBar(title: const Text('video_view advanced example')),
     body: switch (_appRoute) {
-      AppRoute.trackSelector => const TrackSelector(),
-      AppRoute.videoList => makeVideoList(),
-      AppRoute.videoPlayer => const VideoPlayer(),
+      .trackSelector => const TrackSelector(),
+      .videoList => makeVideoList(),
+      .videoPlayer => const VideoPlayer(),
     },
     bottomNavigationBar: BottomNavigationBar(
       items: AppRoute.values
           .map(
-            (AppRoute route) => switch (route) {
-              AppRoute.trackSelector => const BottomNavigationBarItem(
+            (route) => switch (route) {
+              .trackSelector => const BottomNavigationBarItem(
                 icon: Icon(Icons.track_changes),
                 label: 'Track Selector',
               ),
-              AppRoute.videoList => const BottomNavigationBarItem(
+              .videoList => const BottomNavigationBarItem(
                 icon: Icon(Icons.view_stream),
                 label: 'Video List',
               ),
-              AppRoute.videoPlayer => const BottomNavigationBarItem(
+              .videoPlayer => const BottomNavigationBarItem(
                 icon: Icon(Icons.smart_display),
                 label: 'Video Player',
               ),
